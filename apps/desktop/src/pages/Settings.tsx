@@ -151,7 +151,7 @@ const Settings: React.FC = () => {
                   Connected
                 </Badge>
               ) : (
-                <Badge variant="neutral">
+                <Badge variant="default">
                   <X className="w-3 h-3 mr-1" />
                   Not Connected
                 </Badge>
@@ -214,7 +214,7 @@ const Settings: React.FC = () => {
                           size="sm"
                           onClick={handleRemoveToken}
                           disabled={loading}
-                          icon={<Trash2 className="w-4 h-4" />}
+                          leftIcon={<Trash2 className="w-4 h-4" />}
                           className="text-danger-600 hover:text-danger-700 hover:bg-danger-50 dark:hover:bg-danger-900/20"
                         >
                           Remove Token
@@ -237,7 +237,7 @@ const Settings: React.FC = () => {
                     onChange={(e) => setHfToken(e.target.value)}
                     placeholder="hf_..."
                     disabled={loading || verifying}
-                    icon={<Key className="w-4 h-4" />}
+                    leftIcon={<Key className="w-4 h-4" />}
                     className="pr-10"
                   />
                   <button
@@ -263,7 +263,7 @@ const Settings: React.FC = () => {
                   variant="primary"
                   onClick={handleSaveToken}
                   disabled={loading || !hfToken.trim()}
-                  icon={
+                  leftIcon={
                     verifying ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (

@@ -10,11 +10,9 @@ import {
   Square,
   BarChart3,
   GitCompare,
-  Eye,
   Loader2,
   CheckCircle2,
   XCircle,
-  Clock,
   Link as LinkIcon,
 } from 'lucide-react';
 import { Container } from '../components/ui/Container';
@@ -24,7 +22,6 @@ import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Table, Column } from '../components/ui/Table';
 import { HStack, VStack } from '../components/ui/Stack';
-import { Skeleton } from '../components/ui/Skeleton';
 import { Progress } from '../components/ui/Progress';
 import {
   startCrawlerJob,
@@ -58,7 +55,6 @@ const CrawlerManager: React.FC = () => {
   const [jobA, setJobA] = useState('');
   const [jobB, setJobB] = useState('');
   const [comparison, setComparison] = useState('');
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
 
   const { success: showSuccess, error: showError, info: showInfo } = useNotificationStore();
 
@@ -84,16 +80,15 @@ const CrawlerManager: React.FC = () => {
 
           // Get preview
           const previewData = await getCrawlerPreview(activeJob.job_id);
-          setPreview(previewData.data || []);
+          const items = Array.isArray(previewData.data) ? previewData.data : [];
+          setPreview(items.map((it: any) => (typeof it === 'string' ? it : it.url || JSON.stringify(it))));
         } catch (error) {
           console.error('Error polling job status:', error);
         }
       }, 2000);
 
-      setPollingInterval(interval);
-
       return () => {
-        if (interval) clearInterval(interval);
+        clearInterval(interval);
       };
     }
   }, [activeJob]);
@@ -126,8 +121,15 @@ const CrawlerManager: React.FC = () => {
         max_depth: depth,
         max_pages: maxPages 
       });
-      setActiveJob(job);
-      setStatus('Started');
+      setActiveJob({
+        job_id: job.job_id,
+        query: input,
+        status: 'running',
+        started_at: new Date().toISOString(),
+        depth,
+        max_pages: maxPages,
+        pages_crawled: 0,
+      });
       showSuccess('Crawl job started');
       await loadJobs();
     } catch (error) {
@@ -145,10 +147,7 @@ const CrawlerManager: React.FC = () => {
       await stopCrawlerJob(activeJob.job_id);
       setStatus('Stopped');
       showInfo('Crawl job stopped');
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
-        setPollingInterval(null);
-      }
+      setActiveJob(null);
       await loadJobs();
     } catch (error) {
       showError('Failed to stop crawl');
@@ -180,11 +179,11 @@ const CrawlerManager: React.FC = () => {
       case 'completed':
         return <Badge variant="success" size="sm">Completed</Badge>;
       case 'failed':
-        return <Badge variant="danger" size="sm">Failed</Badge>;
+        return <Badge variant="error" size="sm">Failed</Badge>;
       case 'running':
         return <Badge variant="info" size="sm">Running</Badge>;
       default:
-        return <Badge variant="neutral" size="sm">{jobStatus}</Badge>;
+        return <Badge variant="default" size="sm">{jobStatus}</Badge>;
     }
   };
 
@@ -346,7 +345,7 @@ const CrawlerManager: React.FC = () => {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="https://example.com (or comma-separated URLs)"
-                  icon={<Globe className="w-4 h-4" />}
+                  leftIcon={<Globe className="w-4 h-4" />}
                 />
               </div>
               <div>
@@ -379,7 +378,7 @@ const CrawlerManager: React.FC = () => {
                 variant="primary"
                 onClick={handleStart}
                 disabled={loading || !input.trim()}
-                icon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                leftIcon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               >
                 {loading ? 'Starting...' : 'Start Crawl'}
               </Button>
@@ -387,7 +386,7 @@ const CrawlerManager: React.FC = () => {
                 variant="danger"
                 onClick={handleStop}
                 disabled={!activeJob}
-                icon={<Square className="w-4 h-4" />}
+                leftIcon={<Square className="w-4 h-4" />}
               >
                 Stop
               </Button>
@@ -429,7 +428,7 @@ const CrawlerManager: React.FC = () => {
                   </HStack>
                   <Progress 
                     value={(activeJob.pages_crawled / (activeJob.max_pages || 1)) * 100} 
-                    variant="brand"
+                    variant="default"
                   />
                 </div>
               )}
@@ -461,7 +460,7 @@ const CrawlerManager: React.FC = () => {
                 variant="outline"
                 onClick={handleCompare}
                 disabled={loading || !jobA || !jobB}
-                icon={<GitCompare className="w-4 h-4" />}
+                leftIcon={<GitCompare className="w-4 h-4" />}
               >
                 Compare
               </Button>

@@ -144,7 +144,7 @@ export const TrainingConfigPanel: React.FC<TrainingConfigPanelProps> = ({
             variant="ghost"
             size="sm"
             onClick={handleReset}
-            icon={<RotateCcw className="w-4 h-4" />}
+            leftIcon={<RotateCcw className="w-4 h-4" />}
           >
             Reset
           </Button>

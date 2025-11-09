@@ -24,6 +24,14 @@ logger = setup_logger("training_service", log_file="logs/training_service.log")
 # In-memory job storage (replace with Redis in production)
 active_jobs: Dict[str, Dict[str, Any]] = {}
 job_logs: Dict[str, list] = {}
+# Track training threads and cancellation flags
+training_threads: Dict[str, Any] = {}  # job_id -> thread object
+cancellation_flags: Dict[str, bool] = {}  # job_id -> should_cancel flag
+
+
+def should_cancel_job(job_id: str) -> bool:
+    """Check if a job should be cancelled"""
+    return cancellation_flags.get(job_id, False)
 
 
 def start_training(params: Dict[str, Any]) -> str:
@@ -102,6 +110,9 @@ def start_training(params: Dict[str, Any]) -> str:
     }
     job_logs[job_id] = []
     
+    # Initialize cancellation flag
+    cancellation_flags[job_id] = False
+    
     # Start training in background thread (like Docker)
     try:
         _add_log(job_id, f"[START] Training job {job_id} started")
@@ -120,6 +131,7 @@ def start_training(params: Dict[str, Any]) -> str:
 
             def _run_scratch():
                 try:
+                    # Handle None or empty string for output_dir
                     output_dir = params.get('output_dir') or f'models/{job_id}'
                     _add_log(job_id, f"Output directory: {output_dir}")
                     
@@ -169,8 +181,26 @@ def start_training(params: Dict[str, Any]) -> str:
         else:
             # Fine-tuning pretrained model with selected method (QLoRA/LoRA/Full)
             training_method = params.get('training_method', 'qlora').lower()
-            _add_log(job_id, f"Model: {params.get('model_name', 'unknown')}")
-            _add_log(job_id, f"Dataset: {params.get('dataset_path', 'unknown')}")
+            model_name = params.get('model_name')
+            dataset_path = params.get('dataset_path')
+            
+            # Validate required parameters
+            if not model_name:
+                error_msg = "model_name is required for fine-tuning"
+                _add_log(job_id, f"ERROR: {error_msg}")
+                _add_log(job_id, f"STATUS:failed:{error_msg}")
+                logger.error(f"Job {job_id} failed: {error_msg}")
+                return job_id
+            
+            if not dataset_path:
+                error_msg = "dataset_path is required for training"
+                _add_log(job_id, f"ERROR: {error_msg}")
+                _add_log(job_id, f"STATUS:failed:{error_msg}")
+                logger.error(f"Job {job_id} failed: {error_msg}")
+                return job_id
+            
+            _add_log(job_id, f"Model: {model_name}")
+            _add_log(job_id, f"Dataset: {dataset_path}")
             _add_log(job_id, f"Training method: {training_method.upper()}")
             logger.info(f"Initiating {training_method.upper()} training for job {job_id}")
             
@@ -191,24 +221,32 @@ def start_training(params: Dict[str, Any]) -> str:
                 training_config = {}
             
             # Resolve dataset path relative to project root
-            dataset_path = params.get('dataset_path')
-            if dataset_path and not Path(dataset_path).is_absolute():
+            if not Path(dataset_path).is_absolute():
                 # Get project root (4 levels up from this file)
                 project_root = Path(__file__).parent.parent.parent.parent
                 dataset_path = str(project_root / dataset_path)
             _add_log(job_id, f"Resolved dataset path: {dataset_path}")
             
+            # Prepare output directory (handle None or empty string)
+            output_dir = params.get('output_dir') or f'models/{job_id}'
+            _add_log(job_id, f"Output directory: {output_dir}")
+            
+            # Debug logging
+            logger.info(f"Starting efficient training with: model_name={model_name}, dataset_path={dataset_path}, output_dir={output_dir}")
+            _add_log(job_id, f"Debug: model_name={model_name}, dataset_path={dataset_path}")
+            
             # Start efficient training in background thread
             start_efficient_training(
                 job_id=job_id,
-                model_name=params.get('model_name'),
+                model_name=model_name,
                 dataset_path=dataset_path,
-                output_dir=params.get('output_dir', f'models/{job_id}'),
+                output_dir=output_dir,
                 training_method=training_method,
                 lora_config=params.get('lora_config'),
                 training_config=training_config,
                 progress_callback=update_progress,
                 log_callback=_add_log,
+                should_cancel=lambda: should_cancel_job(job_id),
                 run_async=True,  # Run in background thread
             )
         
@@ -236,7 +274,13 @@ def stop_training(job_id: str) -> bool:
     """
     logger.info(f"[STOP] Stopping training job {job_id}")
     
-    # Update database first
+    # Set cancellation flag FIRST so training loop can check it
+    if job_id in cancellation_flags:
+        cancellation_flags[job_id] = True
+        logger.info(f"[OK] Cancellation flag set for job {job_id}")
+        _add_log(job_id, "[STOP] Cancellation requested - stopping training...")
+    
+    # Update database
     session = SessionLocal()
     try:
         job = session.query(TrainingJob).filter(TrainingJob.job_id == job_id).first()
@@ -259,11 +303,10 @@ def stop_training(job_id: str) -> bool:
     if job_id in active_jobs:
         active_jobs[job_id]["status"] = "stopped"
         active_jobs[job_id]["stopped_at"] = datetime.now().isoformat()
-        _add_log(job_id, "[STOP] Training stopped by user")
     
-    # Note: For production, implement signal-based cancellation
-    # Current implementation marks as stopped; actual process
-    # termination should be handled by Celery worker or process manager
+    # Log completion
+    _add_log(job_id, "[STOP] Training stopped by user")
+    logger.info(f"[OK] Stop request completed for job {job_id}")
     
     return True
 

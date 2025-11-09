@@ -12,7 +12,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Download,
-  Trash2,
   Plus,
   RefreshCw,
   Search,
@@ -122,7 +121,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
     }
   };
 
-  const handlePreview = async (dataset: Dataset) => {
+  const handlePreview = async (_dataset: Dataset) => {
     try {
       // Mock preview - in production, fetch from API
       const mockData = [
@@ -210,7 +209,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
               variant="ghost"
               size="sm"
               onClick={loadDatasets}
-              icon={<RefreshCw className="w-4 h-4" />}
+              leftIcon={<RefreshCw className="w-4 h-4" />}
             >
               Refresh
             </Button>
@@ -218,7 +217,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
               variant="primary"
               size="sm"
               onClick={() => setShowUploadModal(true)}
-              icon={<Upload className="w-4 h-4" />}
+              leftIcon={<Upload className="w-4 h-4" />}
             >
               Upload Dataset
             </Button>
@@ -234,7 +233,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
             placeholder="Search datasets..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            icon={<Search className="w-4 h-4" />}
+            leftIcon={<Search className="w-4 h-4" />}
           />
 
           {/* Curated Datasets (for fine-tuning) */}
@@ -259,7 +258,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
                           {curated.description}
                         </p>
                         <HStack spacing={2} className="mt-3">
-                          <Badge variant="neutral" size="sm">
+                          <Badge variant="default" size="sm">
                             {curated.examples.toLocaleString()} examples
                           </Badge>
                           <Badge variant="info" size="sm">
@@ -292,7 +291,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
                 <Button
                   variant="primary"
                   onClick={() => setShowUploadModal(true)}
-                  icon={<Plus className="w-4 h-4" />}
+                  leftIcon={<Plus className="w-4 h-4" />}
                 >
                   Upload Dataset
                 </Button>
@@ -328,10 +327,10 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
                             </p>
                           )}
                           <HStack spacing={2}>
-                            <Badge variant="neutral" size="sm">
+                            <Badge variant="default" size="sm">
                               {dataset.format.toUpperCase()}
                             </Badge>
-                            <Badge variant="neutral" size="sm">
+                            <Badge variant="default" size="sm">
                               {dataset.size_mb.toFixed(1)} MB
                             </Badge>
                             {dataset.num_examples && (
@@ -346,7 +345,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
                                     ? 'success'
                                     : dataset.quality_score > 0.6
                                     ? 'warning'
-                                    : 'danger'
+                                    : 'error'
                                 }
                                 size="sm"
                               >
@@ -363,7 +362,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
                               e.stopPropagation();
                               handlePreview(dataset);
                             }}
-                            icon={<Eye className="w-4 h-4" />}
+                            leftIcon={<Eye className="w-4 h-4" />}
                           />
                         </HStack>
                       </HStack>
@@ -514,25 +513,25 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
                 </h5>
                 <div className="space-y-2 text-xs text-neutral-700 dark:text-neutral-300">
                   <div className="flex gap-2">
-                    <Badge variant="neutral" size="sm">JSON</Badge>
+                    <Badge variant="default" size="sm">JSON</Badge>
                     <code className="flex-1 bg-neutral-100 dark:bg-neutral-900 px-2 py-1 rounded">
                       [{"{"}"instruction": "...", "output": "..."{"}"}, ...]
                     </code>
                   </div>
                   <div className="flex gap-2">
-                    <Badge variant="neutral" size="sm">JSONL</Badge>
+                    <Badge variant="default" size="sm">JSONL</Badge>
                     <code className="flex-1 bg-neutral-100 dark:bg-neutral-900 px-2 py-1 rounded">
                       {"{"}"instruction": "...", "output": "..."{"}"}
                     </code>
                   </div>
                   <div className="flex gap-2">
-                    <Badge variant="neutral" size="sm">CSV</Badge>
+                    <Badge variant="default" size="sm">CSV</Badge>
                     <code className="flex-1 bg-neutral-100 dark:bg-neutral-900 px-2 py-1 rounded">
                       instruction,output
                     </code>
                   </div>
                   <div className="flex gap-2">
-                    <Badge variant="neutral" size="sm">TXT</Badge>
+                    <Badge variant="default" size="sm">TXT</Badge>
                     <span className="flex-1 text-neutral-600 dark:text-neutral-400">
                       Plain text (for training from scratch)
                     </span>
@@ -597,7 +596,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
                 className="p-4 bg-neutral-50 dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700"
               >
                 <div className="mb-2">
-                  <Badge variant="neutral" size="sm">
+                  <Badge variant="default" size="sm">
                     Example {index + 1}
                   </Badge>
                 </div>

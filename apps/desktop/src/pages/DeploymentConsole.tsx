@@ -13,8 +13,6 @@ import {
   ExternalLink,
   Loader2,
   CheckCircle2,
-  XCircle,
-  Clock,
 } from 'lucide-react';
 import { Container } from '../components/ui/Container';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
@@ -42,8 +40,16 @@ interface DeploymentJob {
   endpoint?: string;
 }
 
+interface DeploymentResponse {
+  deployment_id: string;
+  url?: string;
+  endpoints?: Record<string, string>;
+  repo_url?: string;
+  space_url?: string;
+}
+
 const DeploymentConsole: React.FC = () => {
-  const [activeJob, setActiveJob] = useState<DeploymentJob | null>(null);
+  const [activeJob, setActiveJob] = useState<DeploymentJob | DeploymentResponse | null>(null);
   const [status, setStatus] = useState('');
   const [endpoints, setEndpoints] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -53,7 +59,6 @@ const DeploymentConsole: React.FC = () => {
   const [modelA, setModelA] = useState('');
   const [modelB, setModelB] = useState('');
   const [comparison, setComparison] = useState('');
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
 
   const { success: showSuccess, error: showError } = useNotificationStore();
 
@@ -62,13 +67,13 @@ const DeploymentConsole: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (activeJob) {
+    if (activeJob && 'job_id' in activeJob) {
       // Poll for status updates
       const interval = setInterval(async () => {
         try {
           const statusData = await getDeploymentJobStatus(activeJob.job_id);
           setStatus(statusData.status);
-          setProgress(statusData.progress || 0);
+          setProgress(typeof statusData.progress === 'number' ? statusData.progress : 0);
 
           if (statusData.status === 'completed') {
             showSuccess('Deployment completed successfully');
@@ -84,10 +89,8 @@ const DeploymentConsole: React.FC = () => {
         }
       }, 2000);
 
-      setPollingInterval(interval);
-
       return () => {
-        if (interval) clearInterval(interval);
+        clearInterval(interval);
       };
     }
   }, [activeJob]);
@@ -145,7 +148,7 @@ const DeploymentConsole: React.FC = () => {
     setLoading(true);
     try {
       const result = await compareModels(modelA, modelB);
-      setComparison(result.comparison || 'No comparison available.');
+      setComparison((result as any).comparison || JSON.stringify(result, null, 2) || 'No comparison available.');
       showSuccess('Models compared successfully');
     } catch (error) {
       showError('Failed to compare models');
@@ -161,11 +164,11 @@ const DeploymentConsole: React.FC = () => {
       case 'completed':
         return <Badge variant="success" size="sm">Completed</Badge>;
       case 'failed':
-        return <Badge variant="danger" size="sm">Failed</Badge>;
+        return <Badge variant="error" size="sm">Failed</Badge>;
       case 'running':
         return <Badge variant="info" size="sm">Running</Badge>;
       default:
-        return <Badge variant="neutral" size="sm">{jobStatus}</Badge>;
+        return <Badge variant="default" size="sm">{jobStatus}</Badge>;
     }
   };
 
@@ -179,19 +182,6 @@ const DeploymentConsole: React.FC = () => {
         return <Cloud className="w-4 h-4 text-info-500" />;
       default:
         return <Rocket className="w-4 h-4 text-neutral-500" />;
-    }
-  };
-
-  const getTypeBadge = (type: string) => {
-    switch (type) {
-      case 'local':
-        return <Badge variant="brand" size="sm">Local</Badge>;
-      case 'docker':
-        return <Badge variant="success" size="sm">Docker</Badge>;
-      case 'hf_spaces':
-        return <Badge variant="info" size="sm">HF Spaces</Badge>;
-      default:
-        return <Badge variant="neutral" size="sm">{type}</Badge>;
     }
   };
 
@@ -359,7 +349,7 @@ const DeploymentConsole: React.FC = () => {
               variant="outline"
               onClick={() => handleDeploy('local')}
               disabled={loading}
-              icon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Server className="w-4 h-4" />}
+              leftIcon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Server className="w-4 h-4" />}
               className="h-24 flex-col gap-2"
             >
               <span className="text-lg font-semibold">Deploy Locally</span>
@@ -372,7 +362,7 @@ const DeploymentConsole: React.FC = () => {
               variant="outline"
               onClick={() => handleDeploy('docker')}
               disabled={loading}
-              icon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ContainerIcon className="w-4 h-4" />}
+              leftIcon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ContainerIcon className="w-4 h-4" />}
               className="h-24 flex-col gap-2"
             >
               <span className="text-lg font-semibold">Export Docker</span>
@@ -385,7 +375,7 @@ const DeploymentConsole: React.FC = () => {
               variant="outline"
               onClick={() => handleDeploy('hf_spaces')}
               disabled={loading}
-              icon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cloud className="w-4 h-4" />}
+              leftIcon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cloud className="w-4 h-4" />}
               className="h-24 flex-col gap-2"
             >
               <span className="text-lg font-semibold">HF Spaces</span>
@@ -398,7 +388,7 @@ const DeploymentConsole: React.FC = () => {
       </Card>
 
       {/* Active Job Status */}
-      {activeJob && (
+      {activeJob && 'job_id' in activeJob && (
         <Card>
           <CardHeader>
             <CardTitle>Active Deployment</CardTitle>
@@ -430,7 +420,7 @@ const DeploymentConsole: React.FC = () => {
                     {progress}%
                   </span>
                 </HStack>
-                <Progress value={progress} variant="brand" />
+                <Progress value={progress} variant="default" />
               </div>
             </VStack>
           </CardContent>
@@ -494,7 +484,7 @@ const DeploymentConsole: React.FC = () => {
                 variant="outline"
                 onClick={handleCompare}
                 disabled={loading || !modelA || !modelB}
-                icon={<GitCompare className="w-4 h-4" />}
+                leftIcon={<GitCompare className="w-4 h-4" />}
               >
                 Compare
               </Button>

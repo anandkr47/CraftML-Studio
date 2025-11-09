@@ -68,6 +68,7 @@ class TrainingStatusResponse(BaseModel):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     progress: Optional[TrainingProgress] = None
+    params: Optional[Dict[str, Any]] = None
     metrics: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
 

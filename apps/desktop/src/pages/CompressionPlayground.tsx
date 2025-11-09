@@ -9,11 +9,7 @@ import {
   Zap,
   Scissors,
   GitCompare,
-  Play,
-  BarChart3,
   Loader2,
-  CheckCircle2,
-  AlertCircle,
 } from 'lucide-react';
 import { Container } from '../components/ui/Container';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
@@ -22,7 +18,6 @@ import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Table, Column } from '../components/ui/Table';
 import { HStack, VStack } from '../components/ui/Stack';
-import { Progress } from '../components/ui/Progress';
 import {
   startCompressionJob,
   fetchCompressionJobs,
@@ -96,7 +91,12 @@ const CompressionPlayground: React.FC = () => {
     setLoading(true);
     try {
       const job = await startCompressionJob({ type });
-      setActiveJob(job);
+      setActiveJob({
+        job_id: job.job_id,
+        type,
+        status: 'running',
+        created_at: new Date().toISOString(),
+      });
       setStatus('Started');
       showSuccess(`${type} job started`);
       await loadJobs();
@@ -117,7 +117,7 @@ const CompressionPlayground: React.FC = () => {
     setLoading(true);
     try {
       const result = await compareModels(modelA, modelB);
-      setComparison(result.comparison || 'No comparison available.');
+      setComparison((result as any).comparison || JSON.stringify(result, null, 2) || 'No comparison available.');
       showSuccess('Models compared successfully');
     } catch (error) {
       showError('Failed to compare models');
@@ -132,11 +132,11 @@ const CompressionPlayground: React.FC = () => {
       case 'completed':
         return <Badge variant="success" size="sm">Completed</Badge>;
       case 'failed':
-        return <Badge variant="danger" size="sm">Failed</Badge>;
+        return <Badge variant="error" size="sm">Failed</Badge>;
       case 'running':
         return <Badge variant="info" size="sm">Running</Badge>;
       default:
-        return <Badge variant="neutral" size="sm">{jobStatus}</Badge>;
+        return <Badge variant="default" size="sm">{jobStatus}</Badge>;
     }
   };
 
@@ -316,7 +316,7 @@ const CompressionPlayground: React.FC = () => {
               variant="outline"
               onClick={() => handleStart('quantize')}
               disabled={loading}
-              icon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+              leftIcon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
               className="h-24 flex-col gap-2"
             >
               <span className="text-lg font-semibold">Quantize</span>
@@ -329,7 +329,7 @@ const CompressionPlayground: React.FC = () => {
               variant="outline"
               onClick={() => handleStart('prune')}
               disabled={loading}
-              icon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
+              leftIcon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
               className="h-24 flex-col gap-2"
             >
               <span className="text-lg font-semibold">Prune</span>
@@ -342,7 +342,7 @@ const CompressionPlayground: React.FC = () => {
               variant="outline"
               onClick={() => handleStart('distill')}
               disabled={loading}
-              icon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
+              leftIcon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
               className="h-24 flex-col gap-2"
             >
               <span className="text-lg font-semibold">Distill</span>
@@ -408,7 +408,7 @@ const CompressionPlayground: React.FC = () => {
                 variant="outline"
                 onClick={handleCompare}
                 disabled={loading || !modelA || !modelB}
-                icon={<GitCompare className="w-4 h-4" />}
+                leftIcon={<GitCompare className="w-4 h-4" />}
               >
                 Compare
               </Button>

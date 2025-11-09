@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Sparkles, Zap, AlertCircle } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/Card';
 import { Input } from './ui/Input';
-import { Button } from './ui/Button';
+// import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { HStack, VStack } from './ui/Stack';
 import { HFConnectionPrompt } from './HFConnectionPrompt';
@@ -162,7 +162,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                   placeholder="Search HuggingFace models (e.g., 'bert-base', 'gpt2', 'llama')..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  icon={<Search className="w-4 h-4" />}
+                  leftIcon={<Search className="w-4 h-4" />}
                   disabled={!hfConnected}
                 />
                 {!hfConnected && (
@@ -218,7 +218,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                             {model.tags && model.tags.length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-2">
                                 {model.tags.slice(0, 3).map((tag: string) => (
-                                  <Badge key={tag} variant="neutral" className="text-xs">
+                                  <Badge key={tag} variant="default" className="text-xs">
                                     {tag}
                                   </Badge>
                                 ))}
@@ -291,7 +291,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                             {model.description}
                           </p>
                           <div className="flex gap-2 mt-2">
-                            <Badge variant="neutral" className="text-xs">
+                            <Badge variant="default" className="text-xs">
                               {model.size}
                             </Badge>
                             <Badge variant="success" className="text-xs">

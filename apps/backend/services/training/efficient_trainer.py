@@ -51,25 +51,43 @@ class EfficientTrainer:
         training_config: Optional[Dict[str, Any]] = None,
         progress_callback: Optional[Callable] = None,
         log_callback: Optional[Callable] = None,
+        should_cancel: Optional[Callable] = None,
     ):
+        # Validate required parameters
+        if not model_name:
+            raise ValueError(f"model_name is required but got: {repr(model_name)}")
+        if not dataset_path:
+            raise ValueError(f"dataset_path is required but got: {repr(dataset_path)}")
+        
         self.job_id = job_id
         self.model_name = model_name
         self.dataset_path = dataset_path
+        
+        # Ensure output_dir is properly set (handle None or empty string with fallback)
+        if not output_dir:
+            output_dir = f'models/{job_id}'
+            logger.warning(f"output_dir was None/empty, using default: {output_dir}")
+        
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         self.progress_callback = progress_callback
         self.log_callback = log_callback
+        self.should_cancel = should_cancel
         
         # Training method (qlora, lora, or full)
         self.training_method = training_method.lower()
         
         # Default LoRA config (optimized for efficiency)
+        # Ensure lora_config is a dict, not None
+        if lora_config is None:
+            lora_config = {}
+        
         self.lora_config = {
-            'r': lora_config.get('r', 16) if lora_config else 16,
-            'lora_alpha': lora_config.get('lora_alpha', 32) if lora_config else 32,
-            'lora_dropout': lora_config.get('lora_dropout', 0.05) if lora_config else 0.05,
-            'target_modules': lora_config.get('target_modules') if lora_config else None,
+            'r': lora_config.get('r', 16),
+            'lora_alpha': lora_config.get('lora_alpha', 32),
+            'lora_dropout': lora_config.get('lora_dropout', 0.05),
+            'target_modules': lora_config.get('target_modules', None),
         }
         
         # Optimize training config based on method (faster for fine-tuning, balanced for scratch)
@@ -88,23 +106,34 @@ class EfficientTrainer:
             default_lr = 5e-5  # Lower LR for stability
             default_batch = 2  # Smaller batches due to memory
         
+        # Ensure training_config is a dict, not None
+        if training_config is None:
+            training_config = {}
+        
         self.training_config = {
-            'num_epochs': training_config.get('num_epochs', default_epochs) if training_config else default_epochs,
-            'batch_size': training_config.get('batch_size', default_batch) if training_config else default_batch,
-            'learning_rate': training_config.get('learning_rate', default_lr) if training_config else default_lr,
-            'warmup_steps': training_config.get('warmup_steps', 50) if training_config else 50,  # Reduced for speed
-            'gradient_accumulation_steps': training_config.get('gradient_accumulation_steps', 2) if training_config else 2,  # Reduced for speed
-            'max_grad_norm': training_config.get('max_grad_norm', 0.3) if training_config else 0.3,
-            'weight_decay': training_config.get('weight_decay', 0.01) if training_config else 0.01,
+            'num_epochs': training_config.get('num_epochs', default_epochs),
+            'batch_size': training_config.get('batch_size', default_batch),
+            'learning_rate': training_config.get('learning_rate', default_lr),
+            'warmup_steps': training_config.get('warmup_steps', 50),  # Reduced for speed
+            'gradient_accumulation_steps': training_config.get('gradient_accumulation_steps', 2),  # Reduced for speed
+            'max_grad_norm': training_config.get('max_grad_norm', 0.3),
+            'weight_decay': training_config.get('weight_decay', 0.01),
         }
         
         # Auto-detect device
         self.device = self._detect_device()
         
         # Determine quantization based on method
+        # Note: 4-bit quantization requires CUDA
         if self.training_method == 'qlora':
-            self.use_4bit = torch.cuda.is_available()
-            self.use_8bit = False
+            if torch.cuda.is_available():
+                self.use_4bit = True
+                self.use_8bit = False
+            else:
+                # Fallback to LoRA on CPU (4-bit not supported)
+                self._log("⚠️  Warning: QLoRA requires CUDA. Falling back to LoRA on CPU.")
+                self.use_4bit = False
+                self.use_8bit = False
         elif self.training_method == 'lora':
             self.use_4bit = False
             self.use_8bit = False  # Standard precision LoRA
@@ -149,12 +178,21 @@ class EfficientTrainer:
         self._log(f"Training method: {self.training_method.upper()}")
         self._log(f"Device: {self.device}")
         
+        # Check if model needs to be downloaded
+        try:
+            from huggingface_hub import model_info
+            self._log(f"📥 Checking model availability: {self.model_name}")
+        except:
+            pass
+        
         # Load tokenizer
+        self._log("📥 Loading tokenizer...")
         tokenizer = AutoTokenizer.from_pretrained(
             self.model_name,
             trust_remote_code=True,
             use_fast=True,
         )
+        self._log("✓ Tokenizer loaded")
         
         # Set padding token
         if tokenizer.pad_token is None:
@@ -163,8 +201,11 @@ class EfficientTrainer:
         
         # Load model based on training method
         if self.training_method == 'qlora' and self.use_4bit:
-            # QLoRA: 4-bit quantization
+            # QLoRA: 4-bit quantization (GPU only)
             from transformers import BitsAndBytesConfig
+            
+            self._log("📥 Downloading/loading model weights (this may take a few minutes)...")
+            self._log("💡 Tip: Large models will be cached locally for future use")
             
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -185,8 +226,11 @@ class EfficientTrainer:
             model = prepare_model_for_kbit_training(model)
             self._log("✓ Model loaded with 4-bit quantization (QLoRA)")
             
-        elif self.training_method == 'lora':
+        elif self.training_method in ['lora', 'qlora']:
             # LoRA: Standard precision, more speed
+            self._log("📥 Downloading/loading model weights (this may take a few minutes)...")
+            self._log("💡 Tip: Large models will be cached locally for future use")
+            
             model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
                 device_map="auto",
@@ -199,6 +243,9 @@ class EfficientTrainer:
             
         else:  # full fine-tuning
             # Full: No quantization, all parameters trainable
+            self._log("📥 Downloading/loading model weights (this may take a few minutes)...")
+            self._log("💡 Tip: Large models will be cached locally for future use")
+            
             model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
                 device_map="auto",
@@ -286,7 +333,8 @@ class EfficientTrainer:
         
         else:
             # LoRA or QLoRA
-            self._log(f"Configuring {self.training_method.upper()} adapters...")
+            method_display = "QLORA" if self.use_4bit else "LoRA"
+            self._log(f"Configuring {method_display} adapters...")
             
             # Auto-detect target modules if not specified
             target_modules = self.lora_config.get('target_modules')
@@ -317,21 +365,52 @@ class EfficientTrainer:
             all_params = sum(p.numel() for p in model.parameters())
             trainable_percent = 100 * trainable_params / all_params
             
-            self._log(f"✓ {self.training_method.upper()} configured: {trainable_params:,} / {all_params:,} params ({trainable_percent:.2f}%)")
+            method_display = "QLORA" if self.use_4bit else "LoRA"
+            self._log(f"✓ {method_display} configured: {trainable_params:,} / {all_params:,} params ({trainable_percent:.2f}%)")
             
             return model
     
     def train(self):
         """Execute training"""
         try:
+            # Check for cancellation before starting
+            if self.should_cancel and self.should_cancel():
+                self._log("⚠️ Training cancelled before start")
+                if self.log_callback:
+                    self.log_callback(self.job_id, "STATUS:stopped")
+                return {
+                    "status": "stopped",
+                    "message": "Training cancelled by user"
+                }
+            
             # Load model and tokenizer
             model, tokenizer = self.load_model_and_tokenizer()
+            
+            # Check for cancellation after model load
+            if self.should_cancel and self.should_cancel():
+                self._log("⚠️ Training cancelled after model load")
+                if self.log_callback:
+                    self.log_callback(self.job_id, "STATUS:stopped")
+                return {
+                    "status": "stopped",
+                    "message": "Training cancelled by user"
+                }
             
             # Setup LoRA
             model = self.setup_lora(model)
             
             # Load dataset
             train_dataset = self.load_dataset_from_file(tokenizer)
+            
+            # Check for cancellation after dataset load
+            if self.should_cancel and self.should_cancel():
+                self._log("⚠️ Training cancelled after dataset load")
+                if self.log_callback:
+                    self.log_callback(self.job_id, "STATUS:stopped")
+                return {
+                    "status": "stopped",
+                    "message": "Training cancelled by user"
+                }
             
             # Training arguments (optimized for efficiency and speed)
             training_args = TrainingArguments(
@@ -362,7 +441,6 @@ class EfficientTrainer:
                 dataloader_num_workers=0,  # Reduce CPU usage
                 disable_tqdm=False,  # Keep progress bar
                 load_best_model_at_end=False,  # Skip evaluation for speed
-                evaluation_strategy="no",  # No evaluation during training
                 save_strategy="steps",
             )
             
@@ -372,12 +450,21 @@ class EfficientTrainer:
                 mlm=False,
             )
             
-            # Custom callback for progress updates
+            # Custom callback for progress updates and cancellation
             from transformers import TrainerCallback
             
             class ProgressCallback(TrainerCallback):
                 def __init__(self, trainer_instance):
                     self.trainer_instance = trainer_instance
+                
+                def on_step_begin(self, args, state, control, **kwargs):
+                    """Check for cancellation at the start of each training step"""
+                    if self.trainer_instance.should_cancel and self.trainer_instance.should_cancel():
+                        self.trainer_instance._log("⚠️ Training cancelled during training loop")
+                        control.should_training_stop = True
+                        control.should_save = False
+                        control.should_evaluate = False
+                        return control
                 
                 def on_log(self, args, state, control, logs=None, **kwargs):
                     if logs and 'loss' in logs:
@@ -395,6 +482,14 @@ class EfficientTrainer:
                         self.trainer_instance._log(
                             f"Epoch {current_epoch}/{total_epochs} - Step {state.global_step}/{state.max_steps} - Loss: {logs['loss']:.4f}"
                         )
+                    
+                    # Also check for cancellation during logging
+                    if self.trainer_instance.should_cancel and self.trainer_instance.should_cancel():
+                        self.trainer_instance._log("⚠️ Training cancelled")
+                        control.should_training_stop = True
+                        control.should_save = False
+                        control.should_evaluate = False
+                        return control
             
             # Initialize trainer
             trainer = Trainer(
@@ -409,6 +504,16 @@ class EfficientTrainer:
             
             # Train
             trainer.train()
+            
+            # Check if cancelled after training
+            if self.should_cancel and self.should_cancel():
+                self._log("⚠️ Training was cancelled")
+                if self.log_callback:
+                    self.log_callback(self.job_id, "STATUS:stopped")
+                return {
+                    "status": "stopped",
+                    "message": "Training cancelled by user"
+                }
             
             # Save final model
             self._log("💾 Saving model...")
@@ -452,6 +557,7 @@ def start_efficient_training(
     training_config: Optional[Dict[str, Any]] = None,
     progress_callback: Optional[Callable] = None,
     log_callback: Optional[Callable] = None,
+    should_cancel: Optional[Callable] = None,
     run_async: bool = True,
 ) -> Dict[str, Any]:
     """
@@ -467,22 +573,35 @@ def start_efficient_training(
         training_config: Training hyperparameters
         progress_callback: Callback for progress updates
         log_callback: Callback for log messages
+        should_cancel: Callback to check if training should be cancelled
         run_async: Run in background thread (default: True)
     
     Returns:
         Result dict with status and output_dir
     """
-    trainer = EfficientTrainer(
-        job_id=job_id,
-        model_name=model_name,
-        dataset_path=dataset_path,
-        output_dir=output_dir,
-        training_method=training_method,
-        lora_config=lora_config,
-        training_config=training_config,
-        progress_callback=progress_callback,
-        log_callback=log_callback,
-    )
+    # Log what we received for debugging
+    logger.info(f"start_efficient_training called with: job_id={job_id}, model_name={model_name}, dataset_path={dataset_path}, output_dir={output_dir}")
+    
+    try:
+        trainer = EfficientTrainer(
+            job_id=job_id,
+            model_name=model_name,
+            dataset_path=dataset_path,
+            output_dir=output_dir,
+            training_method=training_method,
+            lora_config=lora_config,
+            training_config=training_config,
+            progress_callback=progress_callback,
+            log_callback=log_callback,
+            should_cancel=should_cancel,
+        )
+    except Exception as e:
+        error_msg = f"Failed to initialize EfficientTrainer: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        if log_callback:
+            log_callback(job_id, f"ERROR: {error_msg}")
+            log_callback(job_id, f"STATUS:failed:{error_msg}")
+        raise
     
     if run_async:
         # Wrapper function to catch exceptions in thread

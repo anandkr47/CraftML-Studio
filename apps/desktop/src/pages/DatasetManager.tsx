@@ -36,21 +36,14 @@ import {
   deleteDataset,
 } from '../api/dataset';
 import { useNotificationStore } from '../store/notificationStore';
+import { DatasetSummary } from '../types/api.types';
 
-interface Dataset {
-  id: number;
-  name: string;
-  file_path: string;
-  token_count: number;
-  quality_score: number;
-  created_at: string;
-}
+type Dataset = DatasetSummary;
 
 const initialForm = {
   name: '',
-  file_path: '',
-  token_count: 0,
-  quality_score: 0,
+  path: '',
+  format: 'jsonl' as 'jsonl' | 'csv' | 'txt',
 };
 
 interface UploadedFile {
@@ -65,9 +58,9 @@ const DatasetManager: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [form, setForm] = useState(initialForm);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [uploadMethod, setUploadMethod] = useState<'file' | 'path'>('file');
   const [uploading, setUploading] = useState(false);
@@ -93,9 +86,9 @@ const DatasetManager: React.FC = () => {
     loadDatasets();
   }, []);
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     try {
-      await deleteDataset(id);
+      await deleteDataset(parseInt(id));
       showSuccess('Dataset deleted successfully');
       await loadDatasets();
       setDeleteConfirmId(null);
@@ -108,11 +101,10 @@ const DatasetManager: React.FC = () => {
   const handleEdit = (dataset: Dataset) => {
     setForm({
       name: dataset.name,
-      file_path: dataset.file_path,
-      token_count: dataset.token_count,
-      quality_score: dataset.quality_score,
+      path: dataset.path,
+      format: (dataset.format || 'jsonl') as 'jsonl' | 'csv' | 'txt',
     });
-    setEditingId(dataset.id);
+    setEditingId(dataset.dataset_id);
     setModalOpen(true);
   };
 
@@ -144,10 +136,20 @@ const DatasetManager: React.FC = () => {
     e.preventDefault();
     try {
       if (editingId) {
-        await updateDataset(editingId, form);
+        await updateDataset(parseInt(editingId), {
+          name: form.name,
+          file_path: form.path,
+          token_count: 0,
+          quality_score: 0,
+        });
         showSuccess('Dataset updated successfully');
       } else {
-        await createDataset(form);
+        await createDataset({
+          name: form.name,
+          file_path: form.path,
+          token_count: 0,
+          quality_score: 0,
+        });
         showSuccess('Dataset created successfully');
       }
       setModalOpen(false);
@@ -164,11 +166,8 @@ const DatasetManager: React.FC = () => {
   );
 
   // Calculate stats
-  const totalTokens = datasets.reduce((sum, d) => sum + (d.token_count || 0), 0);
-  const avgQuality =
-    datasets.length > 0
-      ? datasets.reduce((sum, d) => sum + (d.quality_score || 0), 0) / datasets.length
-      : 0;
+  const totalSamples = datasets.reduce((sum, d) => sum + (d.num_samples || 0), 0);
+  const totalSize = datasets.reduce((sum, d) => sum + (d.size_mb || 0), 0);
 
   // Table columns
   const columns: Column<Dataset>[] = [
@@ -185,40 +184,40 @@ const DatasetManager: React.FC = () => {
       ),
     },
     {
-      key: 'file_path',
-      header: 'File Path',
+      key: 'path',
+      header: 'Path',
       render: (dataset) => (
         <span className="text-sm text-neutral-600 dark:text-neutral-400 font-mono">
-          {dataset.file_path}
+          {dataset.path}
         </span>
       ),
     },
     {
-      key: 'token_count',
-      header: 'Tokens',
+      key: 'num_samples',
+      header: 'Samples',
       render: (dataset) => (
-        <Badge variant="neutral" size="sm">
-          {dataset.token_count?.toLocaleString() || '0'}
+        <Badge variant="default" size="sm">
+          {dataset.num_samples?.toLocaleString() || '0'}
         </Badge>
       ),
     },
     {
-      key: 'quality_score',
-      header: 'Quality',
-      render: (dataset) => {
-        const score = dataset.quality_score || 0;
-        const variant =
-          score >= 80
-            ? 'success'
-            : score >= 50
-            ? 'warning'
-            : 'danger';
-        return (
-          <Badge variant={variant} size="sm">
-            {score}%
-          </Badge>
-        );
-      },
+      key: 'size_mb',
+      header: 'Size',
+      render: (dataset) => (
+        <Badge variant="info" size="sm">
+          {dataset.size_mb.toFixed(2)} MB
+        </Badge>
+      ),
+    },
+    {
+      key: 'format',
+      header: 'Format',
+      render: (dataset) => (
+        <Badge variant="default" size="sm">
+          {dataset.format.toUpperCase()}
+        </Badge>
+      ),
     },
     {
       key: 'created_at',
@@ -238,15 +237,15 @@ const DatasetManager: React.FC = () => {
             variant="ghost"
             size="sm"
             onClick={() => handleEdit(dataset)}
-            icon={<Edit2 className="w-4 h-4" />}
+            leftIcon={<Edit2 className="w-4 h-4" />}
           >
             Edit
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setDeleteConfirmId(dataset.id)}
-            icon={<Trash2 className="w-4 h-4" />}
+            onClick={() => setDeleteConfirmId(dataset.dataset_id)}
+            leftIcon={<Trash2 className="w-4 h-4" />}
             className="text-danger-600 hover:text-danger-700 hover:bg-danger-50 dark:hover:bg-danger-900/20"
           >
             Delete
@@ -293,13 +292,13 @@ const DatasetManager: React.FC = () => {
             <HStack justify="between" align="start">
               <VStack spacing={1}>
                 <p className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
-                  Total Tokens
+                  Total Samples
                 </p>
                 <div className="text-3xl font-bold text-neutral-900 dark:text-neutral-100">
                   {loading ? (
                     <Skeleton className="h-10 w-20" />
                   ) : (
-                    totalTokens.toLocaleString()
+                    totalSamples.toLocaleString()
                   )}
                 </div>
               </VStack>
@@ -315,10 +314,10 @@ const DatasetManager: React.FC = () => {
             <HStack justify="between" align="start">
               <VStack spacing={1}>
                 <p className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
-                  Avg Quality
+                  Total Size
                 </p>
                 <div className="text-3xl font-bold text-neutral-900 dark:text-neutral-100">
-                  {loading ? <Skeleton className="h-10 w-16" /> : `${avgQuality.toFixed(0)}%`}
+                  {loading ? <Skeleton className="h-10 w-16" /> : `${totalSize.toFixed(1)} MB`}
                 </div>
               </VStack>
               <div className="p-3 bg-warning-50 dark:bg-warning-900/20 rounded-lg">
@@ -338,21 +337,21 @@ const DatasetManager: React.FC = () => {
                 placeholder="Search datasets..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                icon={<Search className="w-4 h-4" />}
+                leftIcon={<Search className="w-4 h-4" />}
               />
             </div>
             <HStack spacing={3}>
               <Button
                 variant="outline"
                 onClick={() => showInfo('Export feature coming soon')}
-                icon={<Download className="w-4 h-4" />}
+                leftIcon={<Download className="w-4 h-4" />}
               >
                 Export
               </Button>
               <Button
                 variant="primary"
                 onClick={handleCreate}
-                icon={<Plus className="w-4 h-4" />}
+                leftIcon={<Plus className="w-4 h-4" />}
               >
                 Import Dataset
               </Button>
@@ -389,7 +388,7 @@ const DatasetManager: React.FC = () => {
                   : 'Get started by importing your first dataset'}
               </p>
               {!searchQuery && (
-                <Button variant="primary" onClick={handleCreate} icon={<Plus className="w-4 h-4" />}>
+                <Button variant="primary" onClick={handleCreate} leftIcon={<Plus className="w-4 h-4" />}>
                   Import Dataset
                 </Button>
               )}
@@ -560,10 +559,10 @@ const DatasetManager: React.FC = () => {
                     File Path <span className="text-danger-500">*</span>
                   </label>
                   <Input
-                    value={form.file_path}
-                    onChange={(e) => setForm({ ...form, file_path: e.target.value })}
+                    value={form.path}
+                    onChange={(e) => setForm({ ...form, path: e.target.value })}
                     placeholder="/path/to/dataset.jsonl"
-                    icon={<FolderOpen className="w-4 h-4" />}
+                    leftIcon={<FolderOpen className="w-4 h-4" />}
                     required
                   />
                   <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
@@ -581,7 +580,7 @@ const DatasetManager: React.FC = () => {
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="e.g., Customer Support Dataset"
-                  icon={<Database className="w-4 h-4" />}
+                  leftIcon={<Database className="w-4 h-4" />}
                   required
                 />
                 <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
@@ -589,41 +588,36 @@ const DatasetManager: React.FC = () => {
                 </p>
               </div>
 
-              {/* Advanced Settings */}
+              {/* Format Selection */}
               <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Info className="w-4 h-4 text-neutral-500" />
                   <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                    Advanced Settings (Optional)
+                    Dataset Format
                   </h4>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                      Token Count
-                    </label>
-                    <Input
-                      type="number"
-                      value={form.token_count}
-                      onChange={(e) => setForm({ ...form, token_count: Number(e.target.value) })}
-                      placeholder="Auto-calculated"
-                      min="0"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                      Quality Score (0-100)
-                    </label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={form.quality_score}
-                      onChange={(e) => setForm({ ...form, quality_score: Number(e.target.value) })}
-                      placeholder="85"
-                    />
-                  </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['jsonl', 'csv', 'txt'] as const).map((formatOption) => (
+                    <button
+                      key={formatOption}
+                      type="button"
+                      onClick={() => setForm({ ...form, format: formatOption })}
+                      className={`p-3 rounded-lg border-2 text-center transition-all ${
+                        form.format === formatOption
+                          ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20'
+                          : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300'
+                      }`}
+                    >
+                      <div className={`text-sm font-medium ${
+                        form.format === formatOption
+                          ? 'text-brand-900 dark:text-brand-100'
+                          : 'text-neutral-900 dark:text-neutral-100'
+                      }`}>
+                        {formatOption.toUpperCase()}
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -638,25 +632,25 @@ const DatasetManager: React.FC = () => {
                       </h5>
                       <div className="space-y-2 text-xs text-neutral-700 dark:text-neutral-300">
                         <div className="flex gap-2 items-start">
-                          <Badge variant="neutral" size="sm">JSONL</Badge>
+                          <Badge variant="default" size="sm">JSONL</Badge>
                           <code className="flex-1 bg-neutral-100 dark:bg-neutral-900 px-2 py-1 rounded">
                             {"{"}"instruction": "...", "output": "..."{"}"}
                           </code>
                         </div>
                         <div className="flex gap-2 items-start">
-                          <Badge variant="neutral" size="sm">JSON</Badge>
+                          <Badge variant="default" size="sm">JSON</Badge>
                           <code className="flex-1 bg-neutral-100 dark:bg-neutral-900 px-2 py-1 rounded">
                             [{"{"}"instruction": "...", "output": "..."{"}"}, ...]
                           </code>
                         </div>
                         <div className="flex gap-2 items-start">
-                          <Badge variant="neutral" size="sm">CSV</Badge>
+                          <Badge variant="default" size="sm">CSV</Badge>
                           <span className="flex-1 text-neutral-600 dark:text-neutral-400">
                             Headers: instruction,output
                           </span>
                         </div>
                         <div className="flex gap-2 items-start">
-                          <Badge variant="neutral" size="sm">TXT</Badge>
+                          <Badge variant="default" size="sm">TXT</Badge>
                           <span className="flex-1 text-neutral-600 dark:text-neutral-400">
                             Plain text (one sample per line)
                           </span>
@@ -675,7 +669,7 @@ const DatasetManager: React.FC = () => {
                   <span className="text-success-600 dark:text-success-400 font-medium">
                     ✓ Ready to import
                   </span>
-                ) : !editingId && uploadMethod === 'path' && form.file_path && form.name ? (
+                ) : !editingId && uploadMethod === 'path' && form.path && form.name ? (
                   <span className="text-success-600 dark:text-success-400 font-medium">
                     ✓ Ready to import
                   </span>

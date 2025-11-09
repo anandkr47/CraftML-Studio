@@ -130,6 +130,14 @@ export interface TrainingStatus {
     total_steps: number;
     loss: number | null;
   };
+  params?: {
+    model_name?: string;
+    dataset_path?: string;
+    training_method?: string;
+    train_from_scratch?: boolean;
+    model_type?: string;
+    [key: string]: any;
+  };
   metrics?: Record<string, any>;
   started_at?: string;
   completed_at?: string;
@@ -271,6 +279,7 @@ export interface DeploymentInfo {
   url?: string;
   endpoints?: Record<string, string>;
   started_at?: string;
+  progress?: number;
   error?: string;
 }
 

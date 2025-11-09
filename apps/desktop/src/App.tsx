@@ -7,6 +7,7 @@ import EnhancedTrainingConsole from "./pages/EnhancedTrainingConsole";
 import TrainingJobView from "./pages/TrainingJobView";
 import CompressionPlayground from "./pages/CompressionPlayground";
 import DeploymentConsole from "./pages/DeploymentConsole";
+import Playground from "./pages/Playground";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Sidebar from "./layout/Sidebar";
@@ -32,6 +33,7 @@ function App() {
                 <Route path="/train/job/:jobId" element={<TrainingJobView />} />
                 <Route path="/compress" element={<CompressionPlayground />} />
                 <Route path="/deploy" element={<DeploymentConsole />} />
+                <Route path="/playground" element={<Playground />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>

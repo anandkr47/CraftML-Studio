@@ -143,7 +143,7 @@ export const TrainingComparison: React.FC<TrainingComparisonProps> = ({
             <CardTitle>Training Job Comparison</CardTitle>
           </HStack>
           {onClose && (
-            <Button variant="ghost" size="sm" onClick={onClose} icon={<X className="w-4 h-4" />} />
+            <Button variant="ghost" size="sm" onClick={onClose} leftIcon={<X className="w-4 h-4" />} />
           )}
         </HStack>
       </CardHeader>
@@ -158,15 +158,12 @@ export const TrainingComparison: React.FC<TrainingComparisonProps> = ({
               </label>
               <Select
                 value={jobAId}
-                onChange={(e) => setJobAId(e.target.value)}
-              >
-                <option value="">Select a job...</option>
-                {completedJobs.map((job) => (
-                  <option key={job.job_id} value={job.job_id}>
-                    {job.job_id.substring(0, 12)}... - {job.base_model || 'From Scratch'}
-                  </option>
-                ))}
-              </Select>
+                onChange={(val) => setJobAId(val)}
+                options={completedJobs.map((job) => ({
+                  value: job.job_id,
+                  label: `${job.job_id.substring(0, 12)}... - ${job.base_model || 'From Scratch'}`,
+                }))}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
@@ -174,15 +171,12 @@ export const TrainingComparison: React.FC<TrainingComparisonProps> = ({
               </label>
               <Select
                 value={jobBId}
-                onChange={(e) => setJobBId(e.target.value)}
-              >
-                <option value="">Select a job...</option>
-                {completedJobs.map((job) => (
-                  <option key={job.job_id} value={job.job_id} disabled={job.job_id === jobAId}>
-                    {job.job_id.substring(0, 12)}... - {job.base_model || 'From Scratch'}
-                  </option>
-                ))}
-              </Select>
+                onChange={(val) => setJobBId(val)}
+                options={completedJobs.map((job) => ({
+                  value: job.job_id,
+                  label: `${job.job_id.substring(0, 12)}... - ${job.base_model || 'From Scratch'}`,
+                }))}
+              />
             </div>
           </div>
 

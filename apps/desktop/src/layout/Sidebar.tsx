@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Cpu as CpuIcon,
   Zap,
+  MessageSquare,
   Settings as SettingsIcon,
 } from "lucide-react";
 
@@ -25,6 +26,7 @@ const navItems = [
   { name: "Datasets", path: "/datasets", icon: Database },
   { name: "Crawler", path: "/crawler", icon: Globe },
   { name: "Training", path: "/train", icon: PlayCircle },
+  { name: "Playground", path: "/playground", icon: MessageSquare },
   { name: "Compression", path: "/compress", icon: Minimize2 },
   { name: "Deployment", path: "/deploy", icon: Send },
   { name: "Settings", path: "/settings", icon: SettingsIcon },

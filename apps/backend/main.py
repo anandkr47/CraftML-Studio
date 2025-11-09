@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from api import train, crawler, compress, deploy, monitor, dataset, modelhub, websocket
-from api import dataset_upload, tasks, jobs, dedup, convert, docker_deploy, hardware, settings
+from api import dataset_upload, tasks, jobs, dedup, convert, docker_deploy, hardware, settings, playground
 from db.models import Base, engine
 from core.utils import setup_logger
 from models.responses import ErrorResponse
@@ -92,6 +92,7 @@ app.include_router(convert.router, prefix="/api/convert", tags=["Model Conversio
 app.include_router(docker_deploy.router, prefix="/api/docker", tags=["Docker Deployment"])
 app.include_router(hardware.router, prefix="/api/hardware", tags=["Hardware Detection"])
 app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
+app.include_router(playground.router, prefix="/api/playground", tags=["Playground"])
 
 
 @app.get("/")
