@@ -8,7 +8,6 @@ import { Settings, Zap, Target, Cpu, Info, RotateCcw } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/Card';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
-import { Select } from './ui/Select';
 import { Badge } from './ui/Badge';
 import { HStack, VStack } from './ui/Stack';
 

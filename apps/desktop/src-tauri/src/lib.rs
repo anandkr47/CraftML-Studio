@@ -1,5 +1,6 @@
 mod backend_process;
 use backend_process::{BackendProcess, start_backend, stop_backend, backend_status};
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

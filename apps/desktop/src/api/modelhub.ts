@@ -14,7 +14,7 @@ export const downloadModel = async (model_name: string) => {
   return apiService.downloadModel(model_name);
 };
 
-export const deleteCachedModel = async (model_name: string) => {
+export const deleteCachedModel = async (_model_name: string) => {
   // not present in new api; noop or implement if backend supports
   return { success: true } as any;
 };

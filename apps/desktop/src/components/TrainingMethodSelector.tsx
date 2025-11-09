@@ -50,7 +50,7 @@ interface TrainingMethodSelectorProps {
 }
 
 export const TrainingMethodSelector: React.FC<TrainingMethodSelectorProps> = ({
-  selectedModel,
+  selectedModel: _selectedModel,
   selectedMethod,
   onMethodSelect,
   gpuInfo,

@@ -5,7 +5,7 @@ export async function fetchDatasets(): Promise<{ datasets: DatasetSummary[] }> {
   return apiService.listDatasets();
 }
 
-export async function createDataset(data: {
+export async function createDataset(_data: {
   name: string;
   file_path: string;
   token_count: number;
@@ -15,7 +15,7 @@ export async function createDataset(data: {
   return { success: true } as any;
 }
 
-export async function updateDataset(datasetId: number, data: Partial<{
+export async function updateDataset(_datasetId: number, _data: Partial<{
   name: string;
   file_path: string;
   token_count: number;

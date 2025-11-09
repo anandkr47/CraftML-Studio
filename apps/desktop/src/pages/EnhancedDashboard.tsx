@@ -27,7 +27,6 @@ import { formatRelativeTime } from '../utils/api.utils';
 
 const EnhancedDashboard: React.FC = () => {
   const [systemMetrics, setSystemMetrics] = useState<any>(null);
-  const [hardwareInfo, setHardwareInfo] = useState<any>(null);
   const [jobStats, setJobStats] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { getRecentJobs, getRunningJobs } = useJobStore();
@@ -38,13 +37,11 @@ const EnhancedDashboard: React.FC = () => {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const [metrics, hardware, stats] = await Promise.all([
+        const [metrics, stats] = await Promise.all([
           apiService.getSystemMetrics(),
-          apiService.getHardwareInfo(),
           apiService.getJobStats(),
         ]);
         setSystemMetrics(metrics);
-        setHardwareInfo(hardware);
         setJobStats(stats);
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error);

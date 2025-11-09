@@ -11,7 +11,6 @@ import {
   Loader2,
   Settings as SettingsIcon,
   Trash2,
-  Download,
   Play,
   Square,
 } from 'lucide-react';
@@ -19,7 +18,6 @@ import { Container } from '../components/ui/Container';
 import { Card, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
-import { Input } from '../components/ui/Input';
 import { HStack, VStack } from '../components/ui/Stack';
 import { useNotificationStore } from '../store/notificationStore';
 
@@ -441,7 +439,7 @@ const Playground: React.FC = () => {
                             </VStack>
                           </div>
                         ) : (
-                          messages.map((message, index) => (
+                          messages.map((message) => (
                             <div
                               key={message.id}
                               className={`flex gap-3 animate-fadeIn ${

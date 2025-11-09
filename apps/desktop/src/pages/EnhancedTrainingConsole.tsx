@@ -102,7 +102,7 @@ const EnhancedTrainingConsole: React.FC = () => {
   // UI State
   const [showComparison, setShowComparison] = useState(false);
 
-  const { success: showSuccess, error: showError, info: showInfo } = useNotificationStore();
+  const { success: showSuccess, error: showError } = useNotificationStore();
 
   useEffect(() => {
     loadJobs();

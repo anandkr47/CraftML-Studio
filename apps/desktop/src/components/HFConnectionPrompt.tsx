@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Check, X, ExternalLink, Settings as SettingsIcon } from 'lucide-react';
+import { AlertCircle, Check, ExternalLink, Settings as SettingsIcon } from 'lucide-react';
 import { Card, CardContent } from './ui/Card';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';

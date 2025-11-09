@@ -23,7 +23,6 @@ import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { HStack, VStack } from '../components/ui/Stack';
 import { useNotificationStore } from '../store/notificationStore';
-import { apiService } from '../services/api.service';
 
 interface HFTokenStatus {
   is_authenticated: boolean;
@@ -39,7 +38,7 @@ const Settings: React.FC = () => {
   const [tokenStatus, setTokenStatus] = useState<HFTokenStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
 
-  const { success: showSuccess, error: showError, info: showInfo } = useNotificationStore();
+  const { success: showSuccess, error: showError } = useNotificationStore();
 
   useEffect(() => {
     checkTokenStatus();

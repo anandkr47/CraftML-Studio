@@ -15,7 +15,6 @@ import {
   BarChart3,
   AlertCircle,
   CheckCircle2,
-  Loader2,
   Search,
   FolderOpen,
   Info,
@@ -63,7 +62,7 @@ const DatasetManager: React.FC = () => {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [uploadMethod, setUploadMethod] = useState<'file' | 'path'>('file');
-  const [uploading, setUploading] = useState(false);
+  // Uploading state removed (not used operationally)
   
   // Get notification methods from store
   const { success: showSuccess, error: showError, info: showInfo } = useNotificationStore();
@@ -695,19 +694,10 @@ const DatasetManager: React.FC = () => {
                 <Button 
                   variant="primary" 
                   type="submit"
-                  disabled={uploading || (!editingId && uploadMethod === 'file' && !uploadedFile) || (!form.name)}
+                  disabled={(!editingId && uploadMethod === 'file' && !uploadedFile) || (!form.name)}
                 >
-                  {uploading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Importing...
-                    </>
-                  ) : (
-                    <>
-                      {editingId ? <Edit2 className="w-4 h-4 mr-2" /> : <Upload className="w-4 h-4 mr-2" />}
-                      {editingId ? 'Update Dataset' : 'Import Dataset'}
-                    </>
-                  )}
+                  {editingId ? <Edit2 className="w-4 h-4 mr-2" /> : <Upload className="w-4 h-4 mr-2" />}
+                  {editingId ? 'Update Dataset' : 'Import Dataset'}
                 </Button>
               </HStack>
             </div>

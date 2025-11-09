@@ -38,18 +38,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../../apps/backend/**/*",
-      "../../core/**/*",
-      "../../resources/**/*"
-    ],
-    "externalBin": []
-  },
-  "permissions": [
-    "core:default",
-    "shell:allow-execute",
-    "shell:allow-open",
-    "fs:default",
-    "http:default"
-  ]
+    "resources": [],
+    "externalBin": ["bin/craftml-backend.exe"]
+  }
 }
