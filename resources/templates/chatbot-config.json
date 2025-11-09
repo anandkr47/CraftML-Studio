@@ -1,0 +1,35 @@
+{
+  "name": "Chatbot Training",
+  "description": "Pre-configured settings for training a conversational chatbot",
+  "model": {
+    "base_model": "meta-llama/Llama-2-7b-chat-hf",
+    "use_4bit": true
+  },
+  "lora": {
+    "r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "target_modules": ["q_proj", "v_proj", "k_proj", "o_proj"]
+  },
+  "training": {
+    "num_epochs": 3,
+    "batch_size": 4,
+    "learning_rate": 2e-4,
+    "warmup_steps": 100,
+    "save_steps": 500,
+    "logging_steps": 10,
+    "gradient_accumulation_steps": 4
+  },
+  "dataset": {
+    "format": "conversation",
+    "max_length": 512,
+    "min_length": 10
+  },
+  "deployment": {
+    "quantize_after_training": true,
+    "quantization_method": "int4",
+    "deploy_locally": true,
+    "port": 5001
+  }
+}
+

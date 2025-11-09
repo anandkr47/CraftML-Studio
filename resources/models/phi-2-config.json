@@ -1,0 +1,27 @@
+{
+  "model_name": "microsoft/phi-2",
+  "display_name": "Phi-2",
+  "description": "Microsoft's 2.7B parameter model - great for limited resources",
+  "recommended_config": {
+    "lora": {
+      "r": 8,
+      "lora_alpha": 16,
+      "lora_dropout": 0.05,
+      "target_modules": ["q_proj", "v_proj", "k_proj"]
+    },
+    "training": {
+      "num_epochs": 3,
+      "batch_size": 8,
+      "learning_rate": 3e-4,
+      "use_4bit": false,
+      "gradient_checkpointing": true
+    }
+  },
+  "requirements": {
+    "min_gpu_memory_gb": 4,
+    "min_ram_gb": 8,
+    "cuda_required": false
+  },
+  "tags": ["phi", "small-model", "efficient"]
+}
+

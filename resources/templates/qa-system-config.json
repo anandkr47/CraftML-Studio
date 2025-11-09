@@ -1,0 +1,35 @@
+{
+  "name": "Q&A System Training",
+  "description": "Optimized for question-answering and knowledge retrieval",
+  "model": {
+    "base_model": "mistralai/Mistral-7B-v0.1",
+    "use_4bit": true
+  },
+  "lora": {
+    "r": 32,
+    "lora_alpha": 64,
+    "lora_dropout": 0.05,
+    "target_modules": ["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  },
+  "training": {
+    "num_epochs": 5,
+    "batch_size": 2,
+    "learning_rate": 1e-4,
+    "warmup_steps": 50,
+    "save_steps": 250,
+    "logging_steps": 25,
+    "gradient_accumulation_steps": 8
+  },
+  "dataset": {
+    "format": "instruction",
+    "max_length": 1024,
+    "min_length": 20
+  },
+  "deployment": {
+    "quantize_after_training": true,
+    "quantization_method": "int8",
+    "deploy_locally": false,
+    "huggingface_upload": true
+  }
+}
+
