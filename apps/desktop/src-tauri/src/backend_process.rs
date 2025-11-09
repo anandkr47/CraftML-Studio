@@ -28,40 +28,59 @@ impl BackendProcess {
             }
         }
 
-        // Determine Python command based on OS
-        let python_cmd = if cfg!(target_os = "windows") {
-            "python"
-        } else {
-            "python3"
-        };
+        // DEV: run Python script; PROD: spawn bundled sidecar executable
+        let child = if cfg!(debug_assertions) {
+            // Determine Python command based on OS
+            let python_cmd = if cfg!(target_os = "windows") { "python" } else { "python3" };
 
-        // Get backend path relative to the executable
-        let backend_path = std::env::current_exe()
-            .ok()
-            .and_then(|exe_path| exe_path.parent().map(|p| p.to_path_buf()))
-            .and_then(|mut p| {
-                // In development, go up to workspace root
-                if cfg!(debug_assertions) {
-                    p.pop(); // Remove target
-                    p.pop(); // Remove debug
+            // Locate backend source folder from workspace structure
+            let backend_path = std::env::current_exe()
+                .ok()
+                .and_then(|exe_path| exe_path.parent().map(|p| p.to_path_buf()))
+                .and_then(|mut p| {
+                    p.pop(); // remove target
+                    p.pop(); // remove debug
                     p.push("apps");
                     p.push("backend");
-                } else {
-                    // In production, backend should be bundled
-                    p.push("backend");
-                }
-                Some(p)
-            })
-            .ok_or("Failed to determine backend path")?;
+                    Some(p)
+                })
+                .ok_or("Failed to determine backend path")?;
+            let main_py = backend_path.join("main.py");
 
-        let main_py = backend_path.join("main.py");
+            Command::new(python_cmd)
+                .arg(main_py.to_str().ok_or("Invalid path")?)
+                .current_dir(&backend_path)
+                .spawn()
+                .map_err(|e| format!("Failed to start backend (dev): {}", e))?
+        } else {
+            // Production: sidecar sits next to the app executable
+            let exe_dir = std::env::current_exe()
+                .map_err(|_| "Failed to locate current exe")?
+                .parent()
+                .ok_or("Failed to locate exe directory")?
+                .to_path_buf();
 
-        // Start Python backend process
-        let child = Command::new(python_cmd)
-            .arg(main_py.to_str().ok_or("Invalid path")?)
-            .current_dir(&backend_path)
-            .spawn()
-            .map_err(|e| format!("Failed to start backend: {}", e))?;
+            // Try common sidecar filenames across platforms (Tauri v2 target-triple suffix)
+            let candidates = vec![
+                "craftml-backend.exe",
+                "craftml-backend.exe-x86_64-pc-windows-msvc.exe",
+                "craftml-backend-x86_64-unknown-linux-gnu",
+                "craftml-backend-aarch64-unknown-linux-gnu",
+                "craftml-backend-x86_64-apple-darwin",
+                "craftml-backend-aarch64-apple-darwin",
+                "craftml-backend", // non-Windows fallback
+            ];
+            let sidecar_path = candidates
+                .iter()
+                .map(|name| exe_dir.join(name))
+                .find(|p| p.exists())
+                .ok_or("Bundled backend sidecar not found")?;
+
+            Command::new(sidecar_path)
+                .env("CRAFTML_ENV", "prod")
+                .spawn()
+                .map_err(|e| format!("Failed to start backend sidecar: {}", e))?
+        };
 
         *process_lock = Some(child);
 

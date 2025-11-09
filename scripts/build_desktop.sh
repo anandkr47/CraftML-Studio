@@ -8,18 +8,38 @@ echo "🏗️  Building CraftML Studio Desktop App..."
 # Build backend sidecar (PyInstaller)
 echo "🧩 Building backend sidecar (PyInstaller)..."
 cd "$(dirname "$0")/../apps/backend"
-python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
-python3 -m pip install pyinstaller >/dev/null 2>&1 || true
-python3 -m PyInstaller --onefile --name craftml-backend apps/backend/run_server.py
+PYTHON_EXE="python3"
+if ! command -v "$PYTHON_EXE" >/dev/null 2>&1; then
+  PYTHON_EXE="python"
+fi
+"$PYTHON_EXE" -m pip install --upgrade pip >/dev/null 2>&1 || true
+"$PYTHON_EXE" -m pip install pyinstaller >/dev/null 2>&1 || true
+"$PYTHON_EXE" -m PyInstaller --onefile --name craftml-backend run_server.py
 
 # Copy sidecar into Tauri bin
 SIDECAR_SRC="$(pwd)/dist/craftml-backend"
 SIDECAR_DST_DIR="$(dirname "$0")/../apps/desktop/src-tauri/bin"
 mkdir -p "$SIDECAR_DST_DIR"
+
+# Determine host triple (requires rustc)
+TRIPLE="$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')"
+if [ -z "$TRIPLE" ]; then
+  # Fallbacks
+  case "$(uname -s)" in
+    Darwin) TRIPLE="$(uname -m)-apple-darwin" ;;
+    Linux) TRIPLE="$(uname -m)-unknown-linux-gnu" ;;
+    *) TRIPLE="unknown-unknown-unknown" ;;
+  esac
+fi
+
+# Copy sidecar with expected tauri v2 suffix naming
 if [ -f "$SIDECAR_SRC.exe" ]; then
-  cp "$SIDECAR_SRC.exe" "$SIDECAR_DST_DIR/"
+  cp "$SIDECAR_SRC.exe" "$SIDECAR_DST_DIR/craftml-backend.exe-$TRIPLE.exe"
 elif [ -f "$SIDECAR_SRC" ]; then
-  cp "$SIDECAR_SRC" "$SIDECAR_DST_DIR/"
+  cp "$SIDECAR_SRC" "$SIDECAR_DST_DIR/craftml-backend-$TRIPLE"
+else
+  echo "❌ Sidecar not found at $SIDECAR_SRC"
+  exit 1
 fi
 
 # Navigate to desktop app directory

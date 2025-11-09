@@ -226,7 +226,7 @@ const Playground: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900">
+    <div className="min-h-auto bg-neutral-50 dark:bg-neutral-900">
       <Container maxWidth="full" className="py-6">
         <VStack spacing={6}>
           {/* Header */}
@@ -389,9 +389,9 @@ const Playground: React.FC = () => {
             </div>
 
             {/* Main Chat Area */}
-            <div className="lg:col-span-3">
-              <Card className="h-[calc(100vh-200px)] flex flex-col">
-                <CardContent className="pt-6 flex-1 flex flex-col">
+            <div className="lg:col-span-3 min-h-0">
+              <Card className="h-[calc(100vh-200px)] min-h-0 flex flex-col">
+                <CardContent className="pt-6 flex-1 min-h-0 flex flex-col">
                   {!selectedModel ? (
                     <div className="flex-1 flex items-center justify-center text-neutral-500 dark:text-neutral-400">
                       <VStack spacing={3} align="center">
@@ -456,7 +456,7 @@ const Playground: React.FC = () => {
                               )}
 
                               <div
-                                className={`max-w-[70%] rounded-lg px-4 py-3 ${
+                                className={`max-w-[70%] min-w-0 rounded-lg px-4 py-3 ${
                                   message.role === 'user'
                                     ? 'bg-brand-500 text-white'
                                     : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
@@ -471,7 +471,7 @@ const Playground: React.FC = () => {
                                   </div>
                                 ) : (
                                   <>
-                                    <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                                    <p className="text-sm whitespace-pre-wrap break-words break-all">{message.content}</p>
                                     <p
                                       className={`text-xs mt-2 ${
                                         message.role === 'user'
