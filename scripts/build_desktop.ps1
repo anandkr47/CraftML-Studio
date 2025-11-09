@@ -37,7 +37,7 @@ if (Test-Path $SidecarSrc) {
     Copy-Item $SidecarSrc $SidecarDstDir -Force
     # Also create target-triple suffixed copy for Tauri v2 sidecar lookup on Windows
     $TargetTriple = "x86_64-pc-windows-msvc"
-    $SuffixedPath = Join-Path $SidecarDstDir ("craftml-backend.exe-$TargetTriple.exe")
+    $SuffixedPath = Join-Path $SidecarDstDir ("craftml-backend-$TargetTriple.exe")
     Copy-Item $SidecarSrc $SuffixedPath -Force
 } else {
     Write-Error "Backend EXE not found at $SidecarSrc. Ensure Python 3.10+ is installed and PyInstaller succeeded."

@@ -5,9 +5,12 @@ set -e
 
 echo "🏗️  Building CraftML Studio Desktop App..."
 
+# Resolve absolute path of this script
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # Build backend sidecar (PyInstaller)
 echo "🧩 Building backend sidecar (PyInstaller)..."
-cd "$(dirname "$0")/../apps/backend"
+cd "$SCRIPT_DIR/../apps/backend"
 PYTHON_EXE="python3"
 if ! command -v "$PYTHON_EXE" >/dev/null 2>&1; then
   PYTHON_EXE="python"
@@ -18,7 +21,7 @@ fi
 
 # Copy sidecar into Tauri bin
 SIDECAR_SRC="$(pwd)/dist/craftml-backend"
-SIDECAR_DST_DIR="$(dirname "$0")/../apps/desktop/src-tauri/bin"
+SIDECAR_DST_DIR="$SCRIPT_DIR/../apps/desktop/src-tauri/bin"
 mkdir -p "$SIDECAR_DST_DIR"
 
 # Determine host triple (requires rustc)
@@ -43,7 +46,7 @@ else
 fi
 
 # Navigate to desktop app directory
-cd "$(dirname "$0")/../apps/desktop"
+cd "$SCRIPT_DIR/../apps/desktop"
 
 # Install dependencies if needed
 if [ ! -d "node_modules" ]; then
