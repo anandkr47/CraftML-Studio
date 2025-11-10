@@ -1,6 +1,4 @@
 {
-  "bootstrap-sha": "",
-  "plugins": {},
   "packages": {
     "apps/desktop": {
       "release-type": "node",
