@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/anandmindfire/CraftML-Studio/compare/craftml-frontend-v0.2.0...craftml-frontend-v0.2.1) (2025-11-10)
+
+
+### Bug Fixes
+
+* fix ui changes ([4c7e02e](https://github.com/anandmindfire/CraftML-Studio/commit/4c7e02e9ad49ea1802a4e786a5c87ce63d5de1c5))
+
 ## [0.2.0](https://github.com/anandmindfire/CraftML-Studio/compare/craftml-frontend-v0.1.0...craftml-frontend-v0.2.0) (2025-11-10)
 
 
