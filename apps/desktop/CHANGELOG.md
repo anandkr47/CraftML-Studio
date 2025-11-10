@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/anandmindfire/CraftML-Studio/compare/craftml-studio-v0.3.1...craftml-studio-v0.3.2) (2025-11-10)
+
+
+### Bug Fixes
+
+* update commnet in ([c8af5c8](https://github.com/anandmindfire/CraftML-Studio/commit/c8af5c8dad6c97e10fb4fe2fd145c1729e5068bb))
+
 ## [0.3.1](https://github.com/anandmindfire/CraftML-Studio/compare/craftml-studio-v0.3.0...craftml-studio-v0.3.1) (2025-11-10)
 
 
