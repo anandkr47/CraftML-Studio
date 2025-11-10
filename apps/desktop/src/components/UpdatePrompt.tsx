@@ -30,11 +30,9 @@ const UpdatePrompt: React.FC = () => {
     if (!updateInfo?.available) return;
     setIsUpdating(true);
     try {
-      const proc = await import("@tauri-apps/api/process").catch(() => null as any);
       await updateInfo.downloadAndInstall();
-      if (proc?.relaunch) {
-        await proc.relaunch();
-      }
+      // App may restart automatically after install depending on platform/packager.
+      // If not, the user can relaunch manually.
     } catch (_e) {
       setIsUpdating(false);
     }
