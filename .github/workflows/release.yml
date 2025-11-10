@@ -1,0 +1,14 @@
+name: Release Desktop (All Platforms)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  note:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "Release workflow has been merged into build-desktop.yml."
+          echo "Trigger a release by pushing a tag (vX.Y.Z); the build workflow will build and publish."
+
+

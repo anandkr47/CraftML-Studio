@@ -4,7 +4,12 @@ on:
   push:
     branches:
       - master
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -21,7 +26,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -29,7 +34,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install Windows dependencies (Tauri bundling)
         if: runner.os == 'Windows'
@@ -72,4 +77,91 @@ jobs:
           name: craftml-${{ matrix.os }}
           path: apps/desktop/src-tauri/target/release/bundle/**
 
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Tauri CLI
+        run: npm i -g @tauri-apps/cli
+
+      - name: Collect files & generate signatures
+        env:
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -e
+          mkdir -p release_out
+
+          shopt -s globstar nullglob
+          files=(dist/**/bundle/**/*.{deb,rpm,AppImage,dmg,zip,msi,exe})
+
+          for f in "${files[@]}"; do
+            echo "Signing: $f"
+            sig=$(tauri signer sign --private-key "$TAURI_PRIVATE_KEY" --password "$TAURI_KEY_PASSWORD" --file "$f" | tail -n1)
+            echo -n "$sig" > "$f.sig"
+          done
+
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY##*/}"
+          base="https://github.com/$owner/$repo/releases/download/$TAG_NAME"
+
+          cat > release_out/updates.json <<EOF
+          {
+            "version": "${TAG_NAME#v}",
+            "notes": "Release $TAG_NAME",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "windows-x86_64": {
+                "url": "$base/$(basename dist/**/bundle/nsis/*.exe 2>/dev/null || echo '')",
+                "signature": "$(cat dist/**/bundle/nsis/*.exe.sig 2>/dev/null || echo '')"
+              },
+              "darwin-x86_64": {
+                "url": "$base/$(basename dist/**/bundle/dmg/*.dmg 2>/dev/null || echo '')",
+                "signature": "$(cat dist/**/bundle/dmg/*.dmg.sig 2>/dev/null || echo '')"
+              },
+              "darwin-aarch64": {
+                "url": "$base/$(basename dist/**/bundle/dmg/*.dmg 2>/dev/null || echo '')",
+                "signature": "$(cat dist/**/bundle/dmg/*.dmg.sig 2>/dev/null || echo '')"
+              },
+              "linux-x86_64": {
+                "url": "$base/$(basename dist/**/bundle/appimage/*.AppImage 2>/dev/null || echo '')",
+                "signature": "$(cat dist/**/bundle/appimage/*.AppImage.sig 2>/dev/null || echo '')"
+              }
+            }
+          }
+          EOF
+
+          echo "Artifacts to release:"
+          ls -R dist || true
+          echo "updates.json:"
+          cat release_out/updates.json
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/**/bundle/**/*.{deb,rpm,AppImage,dmg,zip,msi,exe}
+            dist/**/bundle/**/*.{deb.sig,rpm.sig,AppImage.sig,dmg.sig,zip.sig,msi.sig,exe.sig}
+            release_out/updates.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
