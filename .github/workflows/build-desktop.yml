@@ -6,6 +6,7 @@ on:
       - master
     tags:
       - "v*.*.*"
+      - "craftml-studio-v*.*.*"
   workflow_dispatch:
 
 permissions:
@@ -89,9 +90,10 @@ jobs:
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.GIT_TOKEN }}
+          include-component-in-tag: false
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/')
     needs: build
     runs-on: ubuntu-latest
     steps:
