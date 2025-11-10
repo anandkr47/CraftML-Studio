@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import React from "react";
 import EnhancedDashboard from "./pages/EnhancedDashboard";
 import HardwareDetection from "./pages/HardwareDetection";
 import DatasetManager from "./pages/DatasetManager";
@@ -14,6 +15,7 @@ import Sidebar from "./layout/Sidebar";
 import Header from "./layout/Header";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { ToastContainer } from "./components/ui/Toast";
+import UpdatePrompt from "./components/UpdatePrompt";
 
 function App() {
   return (
@@ -41,6 +43,7 @@ function App() {
           </div>
         </div>
         <ToastContainer />
+        <UpdatePrompt />
       </BrowserRouter>
     </ThemeProvider>
   );
