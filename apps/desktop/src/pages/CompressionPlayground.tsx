@@ -1,5 +1,5 @@
 /**
- * Compression Playground Page for compression
+ * Compression Playground Page for compression in ai
  * Model compression tools with modern UI matching the design system
  */
 
