@@ -8,6 +8,8 @@ on:
       - "v*.*.*"
       - "craftml-studio-v*.*.*"
   workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -93,7 +95,7 @@ jobs:
           include-component-in-tag: false
 
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -118,7 +120,7 @@ jobs:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
           set -e
           mkdir -p release_out
@@ -170,7 +172,7 @@ jobs:
       - name: Generate release body (download links)
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
           set -e
           owner="${GITHUB_REPOSITORY%%/*}"
