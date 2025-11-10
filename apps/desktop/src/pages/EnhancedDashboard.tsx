@@ -66,7 +66,7 @@ const EnhancedDashboard: React.FC = () => {
   }
 
   return (
-    <Container maxWidth="xl" className="py-6 space-y-6">
+    <Container maxWidth="xl" className="py-6 space-y-6 h-auto">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-neutral-900 dark:text-neutral-100">Dashboard</h1>
