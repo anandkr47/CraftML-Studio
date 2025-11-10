@@ -1,4 +1,5 @@
 use std::process::{Child, Command};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
 
@@ -11,6 +12,41 @@ impl BackendProcess {
         BackendProcess {
             process: Mutex::new(None),
         }
+    }
+
+    pub fn start_with_resource_dir(&self, resource_dir: PathBuf) -> Result<String, String> {
+        let mut process_lock = self.process.lock().unwrap();
+
+        if let Some(ref mut child) = *process_lock {
+            if let Ok(None) = child.try_wait() {
+                return Ok("Backend already running".to_string());
+            }
+        }
+
+        // Look for sidecar under Resources/bin with platform-specific suffixes
+        let bin_dir = resource_dir.join("bin");
+        let candidates = vec![
+            "craftml-backend.exe-x86_64-pc-windows-msvc.exe",
+            "craftml-backend.exe",
+            "craftml-backend-x86_64-unknown-linux-gnu",
+            "craftml-backend-aarch64-unknown-linux-gnu",
+            "craftml-backend-x86_64-apple-darwin",
+            "craftml-backend-aarch64-apple-darwin",
+            "craftml-backend",
+        ];
+        let sidecar_path = candidates
+            .iter()
+            .map(|name| bin_dir.join(name))
+            .find(|p| p.exists())
+            .ok_or("Bundled backend sidecar not found in resources")?;
+
+        let child = Command::new(sidecar_path)
+            .env("CRAFTML_ENV", "prod")
+            .spawn()
+            .map_err(|e| format!("Failed to start backend sidecar: {}", e))?;
+
+        *process_lock = Some(child);
+        Ok("Backend started successfully".to_string())
     }
 
     pub fn start(&self) -> Result<String, String> {

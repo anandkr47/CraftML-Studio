@@ -1,0 +1,24 @@
+{
+  "bootstrap-sha": "",
+  "plugins": {},
+  "packages": {
+    "apps/desktop": {
+      "release-type": "node",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "apps/desktop/src-tauri/tauri.conf.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "toml",
+          "path": "apps/desktop/src-tauri/Cargo.toml",
+          "tomlpath": "package.version"
+        }
+      ]
+    }
+  }
+}
+
+

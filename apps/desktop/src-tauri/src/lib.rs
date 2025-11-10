@@ -18,9 +18,18 @@ pub fn run() {
         .setup(|app| {
             // Auto-start backend on app launch
             let backend_state = app.state::<BackendProcess>();
-            match backend_state.start() {
-                Ok(msg) => println!("Backend: {}", msg),
-                Err(e) => eprintln!("Backend error: {}", e),
+            // Prefer starting from the Resources/bin directory in production bundles
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                match backend_state.start_with_resource_dir(resource_dir) {
+                    Ok(msg) => println!("Backend: {}", msg),
+                    Err(e) => eprintln!("Backend error: {}", e),
+                }
+            } else {
+                // Fallback
+                match backend_state.start() {
+                    Ok(msg) => println!("Backend: {}", msg),
+                    Err(e) => eprintln!("Backend error: {}", e),
+                }
             }
             Ok(())
         })
