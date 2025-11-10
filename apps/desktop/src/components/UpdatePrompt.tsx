@@ -1,18 +1,19 @@
 import React from "react";
 import { Modal, ModalBody, ModalFooter } from "./ui/Modal";
 import { Button } from "./ui/Button";
-import { relaunch } from "@tauri-apps/api/process";
-import { check } from "@tauri-apps/plugin-updater";
 
 const UpdatePrompt: React.FC = () => {
-  const [updateInfo, setUpdateInfo] = React.useState<Awaited<ReturnType<typeof check>> | null>(null);
+  const [updateInfo, setUpdateInfo] = React.useState<any | null>(null);
   const [isUpdating, setIsUpdating] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const result = await check();
+        // Dynamically import to avoid build-time resolution issues
+        const updater = await import("@tauri-apps/plugin-updater").catch(() => null as any);
+        if (!updater?.check) return;
+        const result = await updater.check();
         if (!cancelled && result?.available) {
           setUpdateInfo(result);
         }
@@ -29,8 +30,11 @@ const UpdatePrompt: React.FC = () => {
     if (!updateInfo?.available) return;
     setIsUpdating(true);
     try {
+      const proc = await import("@tauri-apps/api/process").catch(() => null as any);
       await updateInfo.downloadAndInstall();
-      await relaunch();
+      if (proc?.relaunch) {
+        await proc.relaunch();
+      }
     } catch (_e) {
       setIsUpdating(false);
     }
