@@ -13,18 +13,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  release-please:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Release Please
-        uses: googleapis/release-please-action@v4
-        with:
-          config-file: .release-please-config.json
-          manifest-file: .release-please-manifest.json
-          token: ${{ secrets.GIT_TOKEN }}
-
   build:
-    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       fail-fast: false
       matrix:
@@ -164,6 +153,34 @@ jobs:
           echo "updates.json:"
           cat release_out/updates.json
 
+      - name: Generate release body (download links)
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -e
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY##*/}"
+          base="https://github.com/$owner/$repo/releases/download/$TAG_NAME"
+          mkdir -p release_out
+
+          win_exe=$(ls dist/**/bundle/nsis/*.exe 2>/dev/null | head -n1 || true)
+          win_msi=$(ls dist/**/bundle/msi/*.msi 2>/dev/null | head -n1 || true)
+          mac_dmg=$(ls dist/**/bundle/dmg/*.dmg 2>/dev/null | head -n1 || true)
+          linux_appimage=$(ls dist/**/bundle/appimage/*.AppImage 2>/dev/null | head -n1 || true)
+          linux_deb=$(ls dist/**/bundle/deb/*.deb 2>/dev/null | head -n1 || true)
+          linux_rpm=$(ls dist/**/bundle/rpm/*.rpm 2>/dev/null | head -n1 || true)
+
+          {
+            echo "## Downloads"
+            [ -n "$win_exe" ] && echo "- Windows (EXE): [$(basename "$win_exe")]($base/$(basename "$win_exe"))"
+            [ -n "$win_msi" ] && echo "- Windows (MSI): [$(basename "$win_msi")]($base/$(basename "$win_msi"))"
+            [ -n "$mac_dmg" ] && echo "- macOS (DMG): [$(basename "$mac_dmg")]($base/$(basename "$mac_dmg"))"
+            [ -n "$linux_appimage" ] && echo "- Linux (AppImage): [$(basename "$linux_appimage")]($base/$(basename "$linux_appimage"))"
+            [ -n "$linux_deb" ] && echo "- Linux (DEB): [$(basename "$linux_deb")]($base/$(basename "$linux_deb"))"
+            [ -n "$linux_rpm" ] && echo "- Linux (RPM): [$(basename "$linux_rpm")]($base/$(basename "$linux_rpm"))"
+          } > release_out/release_body.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -171,6 +188,7 @@ jobs:
           name: ${{ github.ref_name }}
           draft: false
           prerelease: false
+          body_path: release_out/release_body.md
           files: |
             dist/**/bundle/**/*.{deb,rpm,AppImage,dmg,zip,msi,exe}
             dist/**/bundle/**/*.{deb.sig,rpm.sig,AppImage.sig,dmg.sig,zip.sig,msi.sig,exe.sig}
