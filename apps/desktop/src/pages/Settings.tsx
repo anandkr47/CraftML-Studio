@@ -23,6 +23,7 @@ import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { HStack, VStack } from '../components/ui/Stack';
 import { useNotificationStore } from '../store/notificationStore';
+import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 
 interface HFTokenStatus {
   is_authenticated: boolean;
@@ -37,6 +38,9 @@ const Settings: React.FC = () => {
   const [verifying, setVerifying] = useState(false);
   const [tokenStatus, setTokenStatus] = useState<HFTokenStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<any | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const { success: showSuccess, error: showError } = useNotificationStore();
 
@@ -56,6 +60,37 @@ const Settings: React.FC = () => {
       console.error('Error checking token status:', error);
     } finally {
       setStatusLoading(false);
+    }
+  };
+
+  const handleCheckForUpdates = async () => {
+    setIsCheckingUpdate(true);
+    try {
+      const updater = await import('@tauri-apps/plugin-updater').catch(() => null as any);
+      if (!updater?.check) {
+        showError('Updater not available.');
+        return;
+      }
+      const result = await updater.check();
+      if (result?.available) {
+        setUpdateInfo(result);
+      } else {
+        showSuccess('You are on the latest version.');
+      }
+    } catch (_e) {
+      showError('Failed to check for updates.');
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
+
+  const handleUpdateNow = async () => {
+    if (!updateInfo?.available) return;
+    setIsUpdating(true);
+    try {
+      await updateInfo.downloadAndInstall();
+    } catch (_e) {
+      setIsUpdating(false);
     }
   };
 
@@ -302,6 +337,24 @@ const Settings: React.FC = () => {
           </CardContent>
         </Card>
 
+      {/* Application Updates */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Application Updates</CardTitle>
+          <CardDescription>Check for new versions of CraftML Studio</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <HStack spacing={12} justify="between">
+            <div className="text-sm text-neutral-600 dark:text-neutral-400">
+              Manually check for updates and install when available.
+            </div>
+            <Button variant="primary" onClick={handleCheckForUpdates} isLoading={isCheckingUpdate}>
+              {isCheckingUpdate ? 'Checking…' : 'Check for updates'}
+            </Button>
+          </HStack>
+        </CardContent>
+      </Card>
+
         {/* Token Permissions Info */}
         <Card>
           <CardHeader>
@@ -332,6 +385,29 @@ const Settings: React.FC = () => {
           </CardContent>
         </Card>
       </VStack>
+
+      {/* Update modal */}
+      <Modal
+        isOpen={Boolean(updateInfo?.available)}
+        onClose={() => setUpdateInfo(null)}
+        title="Update available"
+        description={updateInfo?.version ? `Version ${updateInfo.version} is ready to install.` : 'A new version is available.'}
+        size="md"
+      >
+        <ModalBody>
+          <p className="text-sm text-neutral-700 dark:text-neutral-300">
+            Install the update now or later. The app may restart after the update.
+          </p>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="secondary" onClick={() => setUpdateInfo(null)}>
+            Later
+          </Button>
+          <Button variant="primary" onClick={handleUpdateNow} isLoading={isUpdating}>
+            Update now
+          </Button>
+        </ModalFooter>
+      </Modal>
     </Container>
   );
 };
