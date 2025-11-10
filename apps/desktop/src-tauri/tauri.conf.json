@@ -41,12 +41,14 @@
     "resources": [],
     "externalBin": ["bin/craftml-backend"]
   },
-  "updater": {
-    "active": true,
-    "dialog": false,
-    "endpoints": [
-      "https://github.com/${OWNER}/${REPO}/releases/latest/download/updates.json"
-    ],
-    "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQxRUQzRDdDQUE5NjdENjEKUldSaGZaYXFmRDN0MGZtZ0M3OWxGRmhqQ1RDWGtSRm5CNlhFaUNpODhSSGFOcWZLMHpJOXVjN2sK"
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "endpoints": [
+        "https://github.com/${OWNER}/${REPO}/releases/latest/download/updates.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQxRUQzRDdDQUE5NjdENjEKUldSaGZaYXFmRDN0MGZtZ0M3OWxGRmhqQ1RDWGtSRm5CNlhFaUNpODhSSGFOcWZLMHpJOXVjN2sK"
+    }
   }
 }
