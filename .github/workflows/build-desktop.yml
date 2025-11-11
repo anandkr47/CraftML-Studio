@@ -31,14 +31,40 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            apps/desktop/src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+          cache: 'pip'
+          cache-dependency-path: apps/backend/requirements.txt
+
+      - name: Cache Chocolatey packages
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\ProgramData\chocolatey\lib
+          key: ${{ runner.os }}-choco-nsis-wix
+          restore-keys: |
+            ${{ runner.os }}-choco-
 
       - name: Install Windows dependencies (Tauri bundling)
         if: runner.os == 'Windows'
@@ -174,27 +200,47 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           TAG_NAME: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
-          set -e
+          set +e
+          shopt -s globstar nullglob
           owner="${GITHUB_REPOSITORY%%/*}"
           repo="${GITHUB_REPOSITORY##*/}"
           base="https://github.com/$owner/$repo/releases/download/$TAG_NAME"
           mkdir -p release_out
 
-          win_exe=$(ls dist/**/bundle/nsis/*.exe 2>/dev/null | head -n1 || true)
-          win_msi=$(ls dist/**/bundle/msi/*.msi 2>/dev/null | head -n1 || true)
-          mac_dmg=$(ls dist/**/bundle/dmg/*.dmg 2>/dev/null | head -n1 || true)
-          linux_appimage=$(ls dist/**/bundle/appimage/*.AppImage 2>/dev/null | head -n1 || true)
-          linux_deb=$(ls dist/**/bundle/deb/*.deb 2>/dev/null | head -n1 || true)
-          linux_rpm=$(ls dist/**/bundle/rpm/*.rpm 2>/dev/null | head -n1 || true)
+          # Robustly find first artifact of each type without failing the step if missing
+          win_exe=""
+          for f in dist/**/bundle/nsis/*.exe; do win_exe="$f"; break; done
+          win_msi=""
+          for f in dist/**/bundle/msi/*.msi; do win_msi="$f"; break; done
+          mac_dmg=""
+          for f in dist/**/bundle/dmg/*.dmg; do mac_dmg="$f"; break; done
+          linux_appimage=""
+          for f in dist/**/bundle/appimage/*.AppImage; do linux_appimage="$f"; break; done
+          linux_deb=""
+          for f in dist/**/bundle/deb/*.deb; do linux_deb="$f"; break; done
+          linux_rpm=""
+          for f in dist/**/bundle/rpm/*.rpm; do linux_rpm="$f"; break; done
 
           {
             echo "## Downloads"
-            [ -n "$win_exe" ] && echo "- Windows (EXE): [$(basename "$win_exe")]($base/$(basename "$win_exe"))"
-            [ -n "$win_msi" ] && echo "- Windows (MSI): [$(basename "$win_msi")]($base/$(basename "$win_msi"))"
-            [ -n "$mac_dmg" ] && echo "- macOS (DMG): [$(basename "$mac_dmg")]($base/$(basename "$mac_dmg"))"
-            [ -n "$linux_appimage" ] && echo "- Linux (AppImage): [$(basename "$linux_appimage")]($base/$(basename "$linux_appimage"))"
-            [ -n "$linux_deb" ] && echo "- Linux (DEB): [$(basename "$linux_deb")]($base/$(basename "$linux_deb"))"
-            [ -n "$linux_rpm" ] && echo "- Linux (RPM): [$(basename "$linux_rpm")]($base/$(basename "$linux_rpm"))"
+            if [ -n "$win_exe" ]; then
+              echo "- Windows (EXE): [$(basename "$win_exe")]($base/$(basename "$win_exe"))"
+            fi
+            if [ -n "$win_msi" ]; then
+              echo "- Windows (MSI): [$(basename "$win_msi")]($base/$(basename "$win_msi"))"
+            fi
+            if [ -n "$mac_dmg" ]; then
+              echo "- macOS (DMG): [$(basename "$mac_dmg")]($base/$(basename "$mac_dmg"))"
+            fi
+            if [ -n "$linux_appimage" ]; then
+              echo "- Linux (AppImage): [$(basename "$linux_appimage")]($base/$(basename "$linux_appimage"))"
+            fi
+            if [ -n "$linux_deb" ]; then
+              echo "- Linux (DEB): [$(basename "$linux_deb")]($base/$(basename "$linux_deb"))"
+            fi
+            if [ -n "$linux_rpm" ]; then
+              echo "- Linux (RPM): [$(basename "$linux_rpm")]($base/$(basename "$linux_rpm"))"
+            fi
           } > release_out/release_body.md
 
       - name: Create GitHub Release
