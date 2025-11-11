@@ -255,7 +255,7 @@ const DatasetManager: React.FC = () => {
   ];
 
   return (
-    <Container maxWidth="xl" className="py-6 space-y-6">
+    <Container maxWidth="xl" className="py-6 space-y-6 h-full">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-neutral-900 dark:text-neutral-100">
