@@ -6,33 +6,82 @@ Write-Host "Building CraftML Studio Desktop App..." -ForegroundColor Cyan
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootDir = (Resolve-Path (Join-Path $scriptDir "..")).Path
 
-# Ensure venv is active for Python builds if present
-$venvActivate = Join-Path $rootDir "apps\backend\.venv\Scripts\Activate.ps1"
+# Ensure venv exists and is active for Python builds
+$venvDir = Join-Path $rootDir "apps\backend\.venv"
+$venvActivate = Join-Path $venvDir "Scripts\Activate.ps1"
+$venvPython = Join-Path $venvDir "Scripts\python.exe"
+
+if (-not (Test-Path $venvPython)) {
+    Write-Host "Creating Python virtual environment..." -ForegroundColor Yellow
+    # Choose Python executable: prefer 'python', then 'py -3.10'
+    $pythonCmd = $null
+    $pythonArgsBase = @()
+    if ($cmd = Get-Command python -ErrorAction SilentlyContinue) {
+        $pythonCmd = $cmd.Source
+    } elseif ($cmd = Get-Command py -ErrorAction SilentlyContinue) {
+        $pythonCmd = $cmd.Source
+        $pythonArgsBase += '-3.10'
+    } else {
+        Write-Error "No suitable Python runtime found. Please install Python 3.10+ and ensure 'python' or 'py' is on PATH."
+        exit 1
+    }
+    
+    $venvArgs = $pythonArgsBase + @('-m', 'venv', $venvDir)
+    $venvProcess = Start-Process -FilePath $pythonCmd -ArgumentList $venvArgs -NoNewWindow -Wait -PassThru
+    if ($venvProcess.ExitCode -ne 0) {
+        Write-Error "Failed to create virtual environment (exit code $($venvProcess.ExitCode))."
+        exit 1
+    }
+}
+
 if (Test-Path $venvActivate) {
     Write-Host "Activating Python virtual environment..." -ForegroundColor Yellow
     . $venvActivate
+}
+
+# Install backend dependencies
+$requirementsFile = Join-Path $rootDir "apps\backend\requirements.txt"
+if (Test-Path $requirementsFile) {
+    Write-Host "Installing backend dependencies..." -ForegroundColor Yellow
+    $pipArgs = @('-m', 'pip', 'install', '--upgrade', 'pip')
+    $pipProcess = Start-Process -FilePath $venvPython -ArgumentList $pipArgs -NoNewWindow -Wait -PassThru
+    if ($pipProcess.ExitCode -ne 0) {
+        Write-Warning "Failed to upgrade pip, continuing anyway..."
+    }
+    
+    $pipArgs = @('-m', 'pip', 'install', '-r', $requirementsFile)
+    $pipProcess = Start-Process -FilePath $venvPython -ArgumentList $pipArgs -NoNewWindow -Wait -PassThru
+    if ($pipProcess.ExitCode -ne 0) {
+        Write-Error "Failed to install backend dependencies (exit code $($pipProcess.ExitCode))."
+        exit 1
+    }
+} else {
+    Write-Warning "requirements.txt not found at $requirementsFile. Some dependencies may be missing."
 }
 
 # Build backend sidecar (Nuitka)
 Write-Host "Building backend sidecar (Nuitka)..." -ForegroundColor Yellow
 Set-Location $rootDir
 
-# Choose Python executable: prefer 'python', then 'py -3.10'
-$pythonCmd = $null
+# Use venv Python if available, otherwise fall back to system Python
+$pythonCmd = $venvPython
 $pythonArgsBase = @()
-if ($cmd = Get-Command python -ErrorAction SilentlyContinue) {
-    $pythonCmd = $cmd.Source
-} elseif ($cmd = Get-Command py -ErrorAction SilentlyContinue) {
-    $pythonCmd = $cmd.Source
-    $pythonArgsBase += '-3.10'
-} else {
-    Write-Error "No suitable Python runtime found. Please install Python 3.10+ and ensure 'python' or 'py' is on PATH."
-    exit 1
+if (-not (Test-Path $pythonCmd)) {
+    # Fallback to system Python
+    if ($cmd = Get-Command python -ErrorAction SilentlyContinue) {
+        $pythonCmd = $cmd.Source
+    } elseif ($cmd = Get-Command py -ErrorAction SilentlyContinue) {
+        $pythonCmd = $cmd.Source
+        $pythonArgsBase += '-3.10'
+    } else {
+        Write-Error "No suitable Python runtime found. Please install Python 3.10+ and ensure 'python' or 'py' is on PATH."
+        exit 1
+    }
 }
 
-# Ensure Nuitka is available
+# Ensure Nuitka is available in the venv
 Write-Host "Ensuring Nuitka is installed..." -ForegroundColor Yellow
-$pipArgs = $pythonArgsBase + @('-m', 'pip', 'install', '--user', 'nuitka')
+$pipArgs = @('-m', 'pip', 'install', 'nuitka')
 $pipProcess = Start-Process -FilePath $pythonCmd -ArgumentList $pipArgs -NoNewWindow -Wait -PassThru
 if ($pipProcess.ExitCode -ne 0) {
     Write-Error "Failed to install Nuitka (exit code $($pipProcess.ExitCode))."
