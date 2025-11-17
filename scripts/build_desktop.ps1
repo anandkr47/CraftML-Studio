@@ -1,3 +1,7 @@
+param(
+    [switch]$Clean
+)
+
 # Build script for CraftML Studio desktop app (Windows)
 
 Write-Host "Building CraftML Studio Desktop App..." -ForegroundColor Cyan
@@ -88,49 +92,70 @@ if ($pipProcess.ExitCode -ne 0) {
     exit 1
 }
 
-# Clean up any existing build artifacts that might be locked
+# Clean up any existing build artifacts (optional)
 # Nuitka creates dist/main.dist/ directory (or dist/main.build/ for build cache)
 $distDir = Join-Path $rootDir "dist\main.dist"
 $buildDir = Join-Path $rootDir "dist\main.build"
 $distExe = Join-Path $distDir "main.exe"
-if (Test-Path $distExe) {
-    Write-Host "Cleaning up existing build artifacts..." -ForegroundColor Yellow
+if ($Clean) {
+    if (Test-Path $distDir -or Test-Path $buildDir) {
+        Write-Host "Cleaning up existing build artifacts (Clean mode)..." -ForegroundColor Yellow
 
-    # Try to kill any running instances of main.exe
-    $processes = Get-Process -Name "main" -ErrorAction SilentlyContinue
-    if ($processes) {
-        Write-Host "Found running main.exe processes. Stopping them..." -ForegroundColor Yellow
-        $processes | Stop-Process -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 1
-    }
+        # Try to kill any running instances of main.exe
+        $processes = Get-Process -Name "main" -ErrorAction SilentlyContinue
+        if ($processes) {
+            Write-Host "Found running main.exe processes. Stopping them..." -ForegroundColor Yellow
+            $processes | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
+        }
 
-    # Try to remove the directories with retries
-    $maxRetries = 3
-    $retryCount = 0
-    $removed = $false
+        # Try to remove the directories with retries
+        $maxRetries = 3
+        $retryCount = 0
+        $removed = $false
 
-    while ($retryCount -lt $maxRetries -and -not $removed) {
-        try {
-            if (Test-Path $distDir) {
-                Remove-Item $distDir -Recurse -Force -ErrorAction Stop
-            }
-            if (Test-Path $buildDir) {
-                Remove-Item $buildDir -Recurse -Force -ErrorAction Stop
-            }
-            $removed = $true
-            Write-Host "Removed existing build directories" -ForegroundColor Green
-        } catch {
-            $retryCount++
-            if ($retryCount -lt $maxRetries) {
-                Write-Host "Failed to remove build directories (attempt $retryCount/$maxRetries). Retrying..." -ForegroundColor Yellow
-                Start-Sleep -Seconds 2
-            } else {
-                Write-Warning "Could not remove $distDir or $buildDir. It may be locked by another process."
-                Write-Warning "Please close any applications using main.exe and try again."
-                Write-Warning "Continuing build anyway - Nuitka will attempt to overwrite it..."
+        while ($retryCount -lt $maxRetries -and -not $removed) {
+            try {
+                if (Test-Path $distDir) {
+                    Remove-Item $distDir -Recurse -Force -ErrorAction Stop
+                }
+                if (Test-Path $buildDir) {
+                    Remove-Item $buildDir -Recurse -Force -ErrorAction Stop
+                }
+                $removed = $true
+                Write-Host "Removed existing build directories" -ForegroundColor Green
+            } catch {
+                $retryCount++
+                if ($retryCount -lt $maxRetries) {
+                    Write-Host "Failed to remove build directories (attempt $retryCount/$maxRetries). Retrying..." -ForegroundColor Yellow
+                    Start-Sleep -Seconds 2
+                } else {
+                    Write-Warning "Could not remove $distDir or $buildDir. It may be locked by another process."
+                    Write-Warning "Please close any applications using main.exe and try again."
+                    Write-Warning "Continuing build anyway - Nuitka will attempt to overwrite it..."
+                }
             }
         }
     }
+} else {
+    Write-Host "Incremental mode: keeping existing Nuitka outputs (use -Clean to force full rebuild)." -ForegroundColor Yellow
+}
+
+# Detect Clang toolchain (for faster builds)
+$useClang = $false
+$clangCommand = $null
+if ($cmd = Get-Command clang-cl.exe -ErrorAction SilentlyContinue) {
+    $useClang = $true
+    $clangCommand = $cmd.Source
+} elseif ($cmd = Get-Command clang.exe -ErrorAction SilentlyContinue) {
+    $useClang = $true
+    $clangCommand = $cmd.Source
+}
+
+if ($useClang) {
+    Write-Host "Clang toolchain detected at $clangCommand. Enabling --clang for Nuitka." -ForegroundColor Green
+} else {
+    Write-Host "Clang not detected. Using MSVC toolchain. Install Visual Studio Clang to enable faster builds." -ForegroundColor Yellow
 }
 
 # Build EXE from project root so core/plugins/resources are accessible
@@ -141,10 +166,6 @@ $nuitkaArgs = $pythonArgsBase + @(
 
     # Fast build mode
     '--standalone',
-    '--remove-output',
-
-    # Note: Removed --clang flag as it requires Clang to be installed in Visual Studio
-    # MSVC (default) works fine and is already available with Visual Studio BuildTools
     '--jobs=0',            # all CPU cores
     '--nofollow-import-to=torch',
     '--nofollow-import-to=transformers',
@@ -155,22 +176,35 @@ $nuitkaArgs = $pythonArgsBase + @(
     '--output-dir=dist',
     '--output-filename=main',
 
-    # Include backend folders
-    '--include-data-dir=apps/backend/api=api',
-    '--include-data-dir=apps/backend/services=services',
-    '--include-data-dir=apps/backend/db=db',
-    '--include-data-dir=apps/backend/models=models',
-    '--include-data-dir=apps/backend/tasks=tasks',
-    '--include-data-dir=core=core',
-    '--include-data-dir=plugins=plugins',
+    # Include Python packages (Nuitka will discover them via imports, but we explicitly include them)
+    '--include-package=api',
+    '--include-package=services',
+    '--include-package=db',
+    '--include-package=models',
+    '--include-package=tasks',
+    '--include-package=core',
+    '--include-package=plugins',
+    
+    # Include data directories (non-Python files like configs, templates, etc.)
     '--include-data-dir=resources=resources',
 
     # Required packages
     '--include-package=uvicorn',
     '--include-package=fastapi',
     '--include-package=starlette', 
-    '--include-package=pydantic'
+    '--include-package=pydantic',
+
+    # Plugins
+    '--enable-plugin=dill-compat'
 )
+
+if ($Clean) {
+    $nuitkaArgs += '--remove-output'
+}
+
+if ($useClang) {
+    $nuitkaArgs += '--clang'
+}
 try {
     $pyProcess = Start-Process -FilePath $pythonCmd -ArgumentList $nuitkaArgs -NoNewWindow -Wait -PassThru
     if ($pyProcess.ExitCode -ne 0) {

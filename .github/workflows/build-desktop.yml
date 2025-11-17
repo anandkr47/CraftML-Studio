@@ -72,6 +72,8 @@ jobs:
         run: |
           choco install nsis -y
           choco install wixtoolset -y
+          choco install llvm -y
+          Write-Host "Installed LLVM/Clang via Chocolatey for faster Nuitka builds."
 
       - name: Install Linux dependencies (Tauri)
         if: runner.os == 'Linux'
@@ -87,6 +89,15 @@ jobs:
             chmod +x appimagetool
             sudo mv appimagetool /usr/local/bin/
           fi
+          sudo apt-get install -y clang
+          clang --version
+
+      - name: Install macOS Clang (brew)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install llvm || true
+          clang --version || /usr/local/opt/llvm/bin/clang --version || true
 
       - name: Install frontend dependencies
         working-directory: apps/desktop
