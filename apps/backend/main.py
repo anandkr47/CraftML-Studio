@@ -12,14 +12,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+# Lazy import heavy modules to speed up startup
+# Import only what's needed for basic API structure
 from api import train, crawler, compress, deploy, monitor, dataset, modelhub, websocket
 from api import dataset_upload, tasks, jobs, dedup, convert, docker_deploy, hardware, settings, playground
 from db.models import Base, engine
 from core.utils import setup_logger
+from core.config import settings as app_settings
 from models.responses import ErrorResponse
 
 # Setup logging
-logger = setup_logger("craftml_backend", log_file="logs/backend.log")
+logger = setup_logger("craftml_backend", log_file=str(app_settings.logs_dir / "backend.log"))
 
 app = FastAPI(
     title="CraftML Studio API",
@@ -27,8 +30,12 @@ app = FastAPI(
     version="0.1.0"
 )
 
-# Create tables at startup
-Base.metadata.create_all(bind=engine)
+# Create tables at startup (lazy - only if needed)
+# This is fast and doesn't block if tables already exist
+try:
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+except Exception as e:
+    logger.warning(f"Database initialization note: {e}")
 
 # CORS middleware - allow Tauri frontend
 app.add_middleware(

@@ -15,8 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from core.ml.compression import quantize_model, prune_model, distill_model
 from core.utils import setup_logger
+from core.config import settings
 
-logger = setup_logger("compression_service", log_file="logs/compression_service.log")
+logger = setup_logger("compression_service", log_file=str(settings.logs_dir / "compression_service.log"))
 
 # In-memory job storage
 active_jobs: Dict[str, Dict[str, Any]] = {}

@@ -1,9 +1,13 @@
 [package]
-name = "craftml-frontend"
+name = "craftml-studio"
 version = "0.1.0"
-description = "A Tauri App"
+description = "CraftML Studio - Desktop Application"
 authors = ["you"]
 edition = "2021"
+
+[[bin]]
+name = "craftml-studio"
+path = "src/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,7 +15,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "craftml_frontend_lib"
+name = "craftml_studio_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -20,7 +24,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
-tauri-plugin-updater = "2.0.0"
+tauri-plugin-updater = "2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+reqwest = { version = "0.11", features = ["blocking"] }
 

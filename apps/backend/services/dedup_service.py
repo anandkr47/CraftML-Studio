@@ -13,8 +13,9 @@ import logging
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from core.utils import setup_logger
+from core.config import settings
 
-logger = setup_logger("dedup_service", log_file="logs/dedup_service.log")
+logger = setup_logger("dedup_service", log_file=str(settings.logs_dir / "dedup_service.log"))
 
 
 def deduplicate_by_hash(texts: List[str]) -> List[str]:
