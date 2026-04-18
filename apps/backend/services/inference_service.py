@@ -18,8 +18,9 @@ from peft import PeftModel
 from threading import Thread
 
 from core.utils import setup_logger
+from core.config import settings
 
-logger = setup_logger("inference_service", log_file="logs/inference_service.log")
+logger = setup_logger("inference_service", log_file=str(settings.logs_dir / "inference_service.log"))
 
 # Cache loaded models to avoid reloading
 loaded_models: Dict[str, Dict[str, Any]] = {}
@@ -34,9 +35,8 @@ def list_available_models() -> List[Dict[str, Any]]:
     """
     models = []
     
-    # Get the correct path relative to the backend directory
-    backend_dir = Path(__file__).parent.parent  # Go up to apps/backend
-    models_dir = backend_dir / "models"
+    # Use configured models directory
+    models_dir = Path(settings.models_dir)
     
     logger.info(f"Looking for models in: {models_dir.absolute()}")
     

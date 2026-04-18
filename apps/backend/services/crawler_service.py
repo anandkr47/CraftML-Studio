@@ -18,9 +18,10 @@ from core.data.crawler import start_crawl, crawl_with_playwright, filter_crawled
 from core.data.cleaner import clean_crawled_data
 from core.data.formatter import DatasetFormatter
 from core.utils import setup_logger
+from core.config import settings
 from services.dedup_service import deduplicate_with_faiss
 
-logger = setup_logger("crawler_service", log_file="logs/crawler_service.log")
+logger = setup_logger("crawler_service", log_file=str(settings.logs_dir / "crawler_service.log"))
 
 # In-memory job storage
 active_jobs: Dict[str, Dict[str, Any]] = {}

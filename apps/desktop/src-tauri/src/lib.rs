@@ -1,5 +1,5 @@
 mod backend_process;
-use backend_process::{BackendProcess, start_backend, stop_backend, backend_status};
+use backend_process::{BackendProcess, start_backend, stop_backend, backend_status, get_backend_logs};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -13,24 +13,59 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             start_backend,
             stop_backend,
-            backend_status
+            backend_status,
+            get_backend_logs
         ])
         .setup(|app| {
-            // Auto-start backend on app launch
+            // Start backend and wait for it to be ready before showing UI
             let backend_state = app.state::<BackendProcess>();
-            // Prefer starting from the Resources/bin directory in production bundles
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                match backend_state.start_with_resource_dir(resource_dir) {
-                    Ok(msg) => println!("Backend: {}", msg),
-                    Err(e) => eprintln!("Backend error: {}", e),
-                }
+            
+            println!("Starting backend server...");
+            
+            // Start backend
+            let resource_dir = app.path().resource_dir();
+            let start_result = if let Ok(rd) = resource_dir {
+                backend_state.start_with_resource_dir(rd)
             } else {
-                // Fallback
-                match backend_state.start() {
-                    Ok(msg) => println!("Backend: {}", msg),
-                    Err(e) => eprintln!("Backend error: {}", e),
+                backend_state.start()
+            };
+            
+            match start_result {
+                Ok(msg) => {
+                    println!("Backend: {}", msg);
+                    println!("Waiting for backend to be ready...");
+                    
+                    // Wait for backend to be ready (max 30 seconds)
+                    match backend_state.wait_for_ready(30) {
+                        Ok(()) => {
+                            println!("Backend is ready!");
+                        }
+                        Err(e) => {
+                            eprintln!("Backend failed to start: {}", e);
+                            
+                            // Log backend error output for debugging
+                            if let Ok(logs) = get_backend_logs() {
+                                eprintln!("Backend stdout:\n{}", logs["stdout"].as_str().unwrap_or(""));
+                                eprintln!("Backend stderr:\n{}", logs["stderr"].as_str().unwrap_or(""));
+                            }
+                            
+                            // Continue anyway - user can retry
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to start backend: {}", e);
+                    
+                    // Log backend error output for debugging
+                    if let Ok(logs) = get_backend_logs() {
+                        eprintln!("Backend stdout:\n{}", logs["stdout"].as_str().unwrap_or(""));
+                        eprintln!("Backend stderr:\n{}", logs["stderr"].as_str().unwrap_or(""));
+                    }
+                    
+                    // Continue anyway - user can retry manually
                 }
             }
+            
             Ok(())
         })
         .run(tauri::generate_context!())

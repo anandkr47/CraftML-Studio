@@ -61,7 +61,8 @@ async def load_model_endpoint(model_id: str):
     """
     try:
         from pathlib import Path
-        model_path = Path("models") / model_id / "final"
+        from core.config import settings
+        model_path = Path(settings.models_dir) / model_id / "final"
         
         if not model_path.exists():
             raise HTTPException(status_code=404, detail=f"Model {model_id} not found")

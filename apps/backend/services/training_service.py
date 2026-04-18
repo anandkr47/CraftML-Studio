@@ -15,11 +15,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from core.ml.training import start_lora_training
 from core.utils import setup_logger
+from core.config import settings
 from db.models import SessionLocal, TrainingJob
 from services.training import train_from_scratch
 from services.training.efficient_trainer import start_efficient_training
 
-logger = setup_logger("training_service", log_file="logs/training_service.log")
+logger = setup_logger("training_service", log_file=str(settings.logs_dir / "training_service.log"))
 
 # In-memory job storage (replace with Redis in production)
 active_jobs: Dict[str, Dict[str, Any]] = {}
@@ -132,7 +133,7 @@ def start_training(params: Dict[str, Any]) -> str:
             def _run_scratch():
                 try:
                     # Handle None or empty string for output_dir
-                    output_dir = params.get('output_dir') or f'models/{job_id}'
+                    output_dir = params.get('output_dir') or str(settings.models_dir / job_id)
                     _add_log(job_id, f"Output directory: {output_dir}")
                     
                     # Resolve dataset path relative to project root
@@ -228,7 +229,7 @@ def start_training(params: Dict[str, Any]) -> str:
             _add_log(job_id, f"Resolved dataset path: {dataset_path}")
             
             # Prepare output directory (handle None or empty string)
-            output_dir = params.get('output_dir') or f'models/{job_id}'
+            output_dir = params.get('output_dir') or str(settings.models_dir / job_id)
             _add_log(job_id, f"Output directory: {output_dir}")
             
             # Debug logging

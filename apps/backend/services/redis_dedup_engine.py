@@ -10,8 +10,9 @@ from datetime import datetime, timedelta
 import logging
 
 from core.utils import setup_logger
+from core.config import settings
 
-logger = setup_logger("redis_dedup_engine", log_file="logs/dedup_engine.log")
+logger = setup_logger("redis_dedup_engine", log_file=str(settings.logs_dir / "dedup_engine.log"))
 
 
 class RedisHashStore:

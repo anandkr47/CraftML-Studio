@@ -38,8 +38,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [],
-    "externalBin": ["bin/craftml-backend"]
+    "resources": ["bin/**"],
+    "externalBin": []
   },
   "plugins": {
     "updater": {
@@ -52,3 +52,4 @@
     }
   }
 }
+
