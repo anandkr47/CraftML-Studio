@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/anandmindfire/CraftML-Studio/compare/craftml-studio-v0.3.2...craftml-studio-v0.3.3) (2025-11-11)
+
+
+### Bug Fixes
+
+* update ui height ([cfcc44e](https://github.com/anandmindfire/CraftML-Studio/commit/cfcc44ee8bf4139f253a9ecf97fddc266342fdf7))
+
 ## [0.3.2](https://github.com/anandmindfire/CraftML-Studio/compare/craftml-studio-v0.3.1...craftml-studio-v0.3.2) (2025-11-10)
 
 
