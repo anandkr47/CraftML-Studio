@@ -1,16 +1,15 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import EnhancedDashboard from "./pages/EnhancedDashboard";
-import HardwareDetection from "./pages/HardwareDetection";
-import DatasetManager from "./pages/DatasetManager";
-import EnhancedTrainingConsole from "./pages/EnhancedTrainingConsole";
-import TrainingJobView from "./pages/TrainingJobView";
-import CompressionPlayground from "./pages/CompressionPlayground";
+import Compress from "./pages/Compress";
 import DeploymentConsole from "./pages/DeploymentConsole";
-import Playground from "./pages/Playground";
+import Chat from "./pages/Chat";
+import FineTune from "./pages/FineTune";
+import FineTuneJob from "./pages/FineTuneJob";
+import KnowledgeBase from "./pages/KnowledgeBase";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Sidebar from "./layout/Sidebar";
+import { SystemMonitorBar } from "./components/SystemMonitorBar";
 import Header from "./layout/Header";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { ToastContainer } from "./components/ui/Toast";
@@ -120,18 +119,17 @@ function App() {
             <Header />
             <main className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-neutral-900">
               <Routes>
-                <Route path="/" element={<EnhancedDashboard />} />
-                <Route path="/hardware" element={<HardwareDetection />} />
-                <Route path="/datasets" element={<DatasetManager />} />
-                <Route path="/train" element={<EnhancedTrainingConsole />} />
-                <Route path="/train/job/:jobId" element={<TrainingJobView />} />
-                <Route path="/compress" element={<CompressionPlayground />} />
+                <Route path="/" element={<Chat />} />
+                <Route path="/kb" element={<KnowledgeBase />} />
+                <Route path="/finetune" element={<FineTune />} />
+                <Route path="/finetune/job/:jobId" element={<FineTuneJob />} />
+                <Route path="/compress" element={<Compress />} />
                 <Route path="/deploy" element={<DeploymentConsole />} />
-                <Route path="/playground" element={<Playground />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </main>
+            <SystemMonitorBar />
           </div>
         </div>
         <ToastContainer />

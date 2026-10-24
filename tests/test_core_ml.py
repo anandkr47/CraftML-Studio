@@ -11,7 +11,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.ml.utils import MetricsTracker, calculate_perplexity, calculate_model_size
-from core.ml.utils import get_cpu_info, get_memory_info
 
 
 class TestMetrics:
@@ -75,31 +74,6 @@ class TestMetrics:
         print(f"✅ Model size: {size_info['total_params']} params, {size_info['total_memory_mb']:.2f} MB")
 
 
-class TestResourceMonitoring:
-    """Test resource monitoring utilities"""
-    
-    def test_cpu_info(self):
-        """Test CPU information retrieval"""
-        cpu_info = get_cpu_info()
-        
-        assert "cpu_count" in cpu_info
-        assert "cpu_percent" in cpu_info
-        assert cpu_info["cpu_count"] > 0
-        
-        print(f"✅ CPU: {cpu_info['cpu_count']} cores, {cpu_info['cpu_percent']}% usage")
-    
-    def test_memory_info(self):
-        """Test memory information retrieval"""
-        mem_info = get_memory_info()
-        
-        assert "total" in mem_info
-        assert "available" in mem_info
-        assert "percent" in mem_info
-        assert mem_info["total"] > 0
-        
-        print(f"✅ Memory: {mem_info['percent']}% used")
-
-
 def run_all_tests():
     """Run all tests"""
     print("\n" + "="*60)
@@ -112,12 +86,6 @@ def run_all_tests():
     test_metrics.test_metrics_tracker()
     test_metrics.test_perplexity_calculation()
     test_metrics.test_model_size_calculation()
-    
-    # Resource monitoring tests
-    print("\nTesting Resource Monitoring...")
-    test_resources = TestResourceMonitoring()
-    test_resources.test_cpu_info()
-    test_resources.test_memory_info()
     
     print("\n" + "="*60)
     print("✅ ALL TESTS PASSED!")

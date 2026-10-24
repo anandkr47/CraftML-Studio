@@ -105,98 +105,39 @@ class TrainingJobCountsResponse(BaseModel):
 
 
 # ============================================================================
-# Crawler Response Models
-# ============================================================================
-
-class CrawlerProgress(BaseModel):
-    """Crawler progress information"""
-    pages_crawled: int
-    pages_total: int
-    current_url: Optional[str] = None
-
-
-class CrawlerStatusResponse(BaseModel):
-    """Crawler status response"""
-    job_id: str
-    status: str
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    progress: Optional[CrawlerProgress] = None
-    error: Optional[str] = None
-
-
-class CrawledPage(BaseModel):
-    """Single crawled page"""
-    url: str
-    title: str
-    content: str
-    timestamp: float
-    depth: int
-    content_hash: str
-
-
-class CrawlerPreviewResponse(BaseModel):
-    """Crawler data preview"""
-    job_id: str
-    pages: List[CrawledPage]
-    total: int
-
-
-# ============================================================================
 # Compression Response Models
 # ============================================================================
 
-class CompressionResult(BaseModel):
-    """Compression result information"""
-    original_size_mb: Optional[float] = None
-    compressed_size_mb: Optional[float] = None
-    compression_ratio: Optional[str] = None
-    method: str
-
-
 class CompressionStatusResponse(BaseModel):
-    """Compression status response"""
+    """Compression job status; ``result`` holds the before/after report once finished"""
     job_id: str
     status: str
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
-    result: Optional[CompressionResult] = None
+    params: Optional[Dict[str, Any]] = None
+    result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
-
-
-class ModelComparisonResponse(BaseModel):
-    """Model comparison response"""
-    model_a: Dict[str, Any]
-    model_b: Dict[str, Any]
-    compression_ratio: str
-    size_reduction_mb: float
-    size_reduction_percent: float
 
 
 # ============================================================================
 # Deployment Response Models
 # ============================================================================
 
-class DeploymentEndpoints(BaseModel):
-    """Deployment endpoint URLs"""
-    generate: str
-    health: str
-
-
 class LocalDeploymentResponse(BaseModel):
-    """Local deployment response"""
+    """Local API server response"""
     deployment_id: str
     url: str
-    endpoints: DeploymentEndpoints
+    base_url: str
+    endpoints: Dict[str, str]
+    auth_required: bool = False
     status: str = "running"
 
 
 class HuggingFaceDeploymentResponse(BaseModel):
-    """HuggingFace deployment response"""
+    """Hugging Face export started (poll /api/deploy/status/{id} for the result)"""
     deployment_id: str
-    repo_url: str
     status: str
-    space_url: Optional[str] = None
+    repo_url: Optional[str] = None
 
 
 class DeploymentSummary(BaseModel):
@@ -206,43 +147,15 @@ class DeploymentSummary(BaseModel):
     status: str
     started_at: str
     url: Optional[str] = None
+    model_id: Optional[str] = None
+    repo_url: Optional[str] = None
+    error: Optional[str] = None
 
 
 class DeploymentsListResponse(BaseModel):
     """List of deployments"""
     deployments: List[DeploymentSummary]
     total: int
-
-
-# ============================================================================
-# Dataset Response Models
-# ============================================================================
-
-class DatasetSummary(BaseModel):
-    """Dataset summary information"""
-    dataset_id: str
-    name: str
-    format: str
-    size_mb: float
-    num_samples: Optional[int] = None
-    created_at: str
-
-
-class DatasetsListResponse(BaseModel):
-    """List of datasets"""
-    datasets: List[DatasetSummary]
-    total: int
-
-
-class DatasetUploadResponse(BaseModel):
-    """Dataset upload response"""
-    dataset_id: str
-    filename: str
-    size_mb: float
-    format: str
-    num_samples: Optional[int] = None
-    uploaded_at: Optional[str] = None
-    path: Optional[str] = None
 
 
 # ============================================================================
@@ -280,39 +193,4 @@ class LocalModelsResponse(BaseModel):
     models: List[LocalModelInfo]
     total: int
 
-
-# ============================================================================
-# Monitoring Response Models
-# ============================================================================
-
-class GPUInfo(BaseModel):
-    """GPU information"""
-    id: int
-    name: str
-    memory_total: float
-    memory_used: float
-    memory_free: float
-    memory_util: float
-    gpu_util: float
-    temperature: float
-
-
-class SystemInfo(BaseModel):
-    """System information"""
-    platform: str
-    platform_release: str
-    platform_version: str
-    architecture: str
-    processor: str
-    hostname: str
-
-
-class ResourceMetricsResponse(BaseModel):
-    """Resource metrics response"""
-    timestamp: float
-    system: SystemInfo
-    cpu: Dict[str, Any]
-    memory: Dict[str, Any]
-    disk: Dict[str, Any]
-    gpus: List[GPUInfo]
 

@@ -15,9 +15,10 @@ from fastapi.responses import JSONResponse
 # Lazy import heavy modules to speed up startup
 # Import only what's needed for basic API structure
 from api import train, compress, deploy, monitor, dataset, modelhub, websocket
-from api import dataset_upload, jobs, convert, docker_deploy, hardware, settings, playground
+from api import jobs, settings, chat, kb
+from api.openai_compat import create_router as create_openai_router
 from db.models import init_db
-from services import jobs
+from services import jobs as job_store
 from core.utils import setup_logger
 from core.config import settings as app_settings
 from models.responses import ErrorResponse
@@ -34,7 +35,7 @@ app = FastAPI(
 # Create tables, migrate legacy data, and fail jobs orphaned by a previous run
 try:
     init_db()
-    interrupted = jobs.fail_interrupted_jobs()
+    interrupted = job_store.fail_interrupted_jobs()
     if interrupted:
         logger.warning(f"Marked {interrupted} interrupted job(s) as failed")
 except Exception as e:
@@ -91,15 +92,13 @@ app.include_router(compress.router, prefix="/api/compress", tags=["Compression"]
 app.include_router(deploy.router, prefix="/api/deploy", tags=["Deployment"])
 app.include_router(monitor.router, prefix="/api/monitor", tags=["Monitoring"])
 app.include_router(dataset.router, prefix="/api/dataset", tags=["Dataset"])
-app.include_router(dataset_upload.router, prefix="/api/dataset-upload", tags=["Dataset Upload"])
 app.include_router(modelhub.router, prefix="/api/modelhub", tags=["Model Hub"])
 app.include_router(websocket.router, prefix="/ws", tags=["WebSocket"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Job History"])
-app.include_router(convert.router, prefix="/api/convert", tags=["Model Conversion"])
-app.include_router(docker_deploy.router, prefix="/api/docker", tags=["Docker Deployment"])
-app.include_router(hardware.router, prefix="/api/hardware", tags=["Hardware Detection"])
 app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
-app.include_router(playground.router, prefix="/api/playground", tags=["Playground"])
+app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
+app.include_router(kb.router, prefix="/api/kb", tags=["Knowledge Base"])
+app.include_router(create_openai_router(), prefix="/v1", tags=["OpenAI Compatible"])
 
 
 @app.get("/")
@@ -117,10 +116,10 @@ async def root():
             "dataset": "/api/dataset",
             "modelhub": "/api/modelhub",
             "jobs": "/api/jobs",
-            "convert": "/api/convert",
-            "docker": "/api/docker",
-            "hardware": "/api/hardware",
-            "settings": "/api/settings"
+            "settings": "/api/settings",
+            "chat": "/api/chat",
+            "kb": "/api/kb",
+            "openai": "/v1"
         }
     }
 

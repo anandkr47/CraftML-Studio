@@ -1,28 +1,22 @@
 """
-Core Data Processing Module
+Core Data Module
 Dataset loading and formatting for fine-tuning
 """
 
-from core.data.formatter import (
-    DatasetFormatter,
-    format_dataset,
-    save_as_jsonl,
-    save_as_csv
-)
-from core.data.dataset_utils import (
-    DatasetLoader,
-    load_and_prepare_dataset,
-    format_for_instruction_tuning,
-    format_for_chat
+from core.data.finetune_dataset import (
+    DatasetFormatError,
+    SUPPORTED_EXTENSIONS,
+    detect_format,
+    inspect_dataset,
+    load_raw,
+    to_text_dataset,
 )
 
 __all__ = [
-    'DatasetFormatter',
-    'format_dataset',
-    'save_as_jsonl',
-    'save_as_csv',
-    'DatasetLoader',
-    'load_and_prepare_dataset',
-    'format_for_instruction_tuning',
-    'format_for_chat',
+    'DatasetFormatError',
+    'SUPPORTED_EXTENSIONS',
+    'detect_format',
+    'inspect_dataset',
+    'load_raw',
+    'to_text_dataset',
 ]

@@ -18,7 +18,7 @@ from sqlalchemy import func
 
 from core.config import settings
 from core.utils import setup_logger
-from db.models import Job, JobLog, SessionLocal
+from db.models import Job, JobLog, JobMetric, SessionLocal
 
 logger = setup_logger("jobs", log_file=str(settings.logs_dir / "jobs.log"))
 
@@ -125,6 +125,41 @@ def append_log(job_id: str, message: str) -> None:
         session.commit()
 
 
+def add_metric(
+    job_id: str,
+    step: int,
+    epoch: Optional[float] = None,
+    loss: Optional[float] = None,
+    learning_rate: Optional[float] = None,
+    vram_gb: Optional[float] = None,
+) -> None:
+    with SessionLocal() as session:
+        session.add(
+            JobMetric(
+                job_id=job_id, step=step, epoch=epoch, loss=loss,
+                learning_rate=learning_rate, vram_gb=vram_gb,
+            )
+        )
+        session.commit()
+
+
+def get_metrics(job_id: str, after_step: int = -1, limit: int = 5000) -> List[Dict[str, Any]]:
+    """Metric points with ``step > after_step``, oldest first."""
+    with SessionLocal() as session:
+        rows = (
+            session.query(JobMetric)
+            .filter(JobMetric.job_id == job_id, JobMetric.step > after_step)
+            .order_by(JobMetric.step)
+            .limit(limit)
+            .all()
+        )
+        return [
+            {"step": r.step, "epoch": r.epoch, "loss": r.loss,
+             "learning_rate": r.learning_rate, "vram_gb": r.vram_gb}
+            for r in rows
+        ]
+
+
 def get(job_id: str) -> Optional[Dict[str, Any]]:
     with SessionLocal() as session:
         job = session.query(Job).filter(Job.job_id == job_id).first()
@@ -183,6 +218,7 @@ def delete(job_id: str) -> bool:
         if not job or job.status in ("pending", "running"):
             return False
         session.query(JobLog).filter(JobLog.job_id == job_id).delete()
+        session.query(JobMetric).filter(JobMetric.job_id == job_id).delete()
         session.delete(job)
         session.commit()
     _cancel_flags.pop(job_id, None)

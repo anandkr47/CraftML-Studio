@@ -9,7 +9,6 @@ from typing import Any, Dict, Optional
 
 from core.config import settings
 from core.utils import setup_logger
-from db.models import Dataset, SessionLocal
 from services import jobs
 from services.training.efficient_trainer import start_efficient_training
 
@@ -21,16 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _resolve_dataset_path(params: Dict[str, Any]) -> None:
-    """Resolve ``dataset_id`` to a file path and make relative paths absolute."""
-    if "dataset_id" in params and not params.get("dataset_path"):
-        with SessionLocal() as session:
-            dataset = session.query(Dataset).filter(Dataset.id == params["dataset_id"]).first()
-        if dataset:
-            params["dataset_path"] = dataset.file_path
-            logger.info(f"Resolved dataset_id {params['dataset_id']} to {dataset.file_path}")
-        else:
-            raise ValueError(f"Dataset {params['dataset_id']} not found")
-
+    """Make a relative dataset path absolute (relative to the project root)."""
     dataset_path = params.get("dataset_path")
     if dataset_path and not Path(dataset_path).is_absolute():
         params["dataset_path"] = str(PROJECT_ROOT / dataset_path)
@@ -72,6 +62,15 @@ def update_progress(
     if metrics:
         progress["metrics"] = metrics
     jobs.update(job_id, progress=progress)
+    extra = metrics or {}
+    jobs.add_metric(
+        job_id,
+        step=current_step,
+        epoch=extra.get("epoch", current_epoch),
+        loss=loss,
+        learning_rate=extra.get("learning_rate"),
+        vram_gb=extra.get("vram_gb"),
+    )
     _add_log(
         job_id,
         f"Epoch {current_epoch}/{total_epochs}, "
@@ -84,7 +83,7 @@ def start_training(params: Dict[str, Any]) -> str:
     Start a fine-tuning job.
 
     Args:
-        params: model_name, dataset_path or dataset_id, training_method
+        params: model_name, dataset_path, training_method
             (qlora/lora/full), lora_config, training_config, output_dir.
 
     Returns:

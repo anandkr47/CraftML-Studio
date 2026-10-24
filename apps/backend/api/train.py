@@ -4,6 +4,7 @@ Handles model fine-tuning endpoints with Pydantic validation
 """
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from services import jobs as job_store
 from services.training_service import (
     start_training,
     stop_training,
@@ -190,3 +191,11 @@ async def training_job_counts():
         return TrainingJobCountsResponse(**counts)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/metrics/{job_id}")
+async def train_metrics(job_id: str, after_step: int = -1):
+    """Logged training steps (loss, learning rate, VRAM) with step > after_step."""
+    if not job_store.get(job_id):
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    return {"job_id": job_id, "points": job_store.get_metrics(job_id, after_step)}

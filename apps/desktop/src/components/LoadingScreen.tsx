@@ -10,39 +10,34 @@ interface Feature {
 
 const features: Feature[] = [
   {
-    icon: "🚀",
-    title: "Model Training",
-    description: "Fine-tune LLMs with LoRA, QLoRA, and full fine-tuning on your local hardware"
+    icon: "💬",
+    title: "Chat Studio",
+    description: "Chat with local models, tune sampling parameters, and ground answers in your own documents"
   },
   {
     icon: "🧠",
-    title: "AI Playground",
-    description: "Test and interact with trained models in real-time with an intuitive interface"
-  },
-  {
-    icon: "📊",
-    title: "Dataset Management",
-    description: "Create, manage, and prepare datasets for training with advanced preprocessing"
+    title: "Fine-Tune",
+    description: "No-code LoRA and QLoRA fine-tuning with live loss curves and automatic checkpoints"
   },
   {
     icon: "🗜️",
-    title: "Model Compression",
-    description: "Optimize model size with quantization"
+    title: "Compress",
+    description: "Quantize models to GGUF, INT4/INT8, GPTQ or AWQ and compare size, quality and speed"
   },
   {
-    icon: "🚢",
-    title: "Deployment",
-    description: "Deploy your models to production with Docker and cloud integration"
+    icon: "📚",
+    title: "Knowledge Base",
+    description: "Drop in PDFs, Markdown, text and Word files — embedded and searched entirely on your machine"
   },
   {
-    icon: "📈",
-    title: "Job Monitoring",
-    description: "Track training progress, view logs, and manage multiple training jobs"
+    icon: "🚀",
+    title: "Deploy & Endpoints",
+    description: "Serve models through a local OpenAI-compatible API or publish them to Hugging Face"
   },
   {
-    icon: "⚡",
-    title: "Hardware Detection",
-    description: "Automatic GPU detection and optimization for maximum performance"
+    icon: "📊",
+    title: "System Monitor",
+    description: "Live CPU, RAM and GPU usage with alerts before you run out of memory"
   }
 ];
 

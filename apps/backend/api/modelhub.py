@@ -6,7 +6,7 @@ Handles model search, download, and management from HuggingFace
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from huggingface_hub import HfApi, snapshot_download, list_models
+from huggingface_hub import HfApi, hf_hub_download, snapshot_download, list_models
 from typing import Optional, List
 import logging
 
@@ -23,7 +23,7 @@ hf_api = HfApi()
 
 
 @router.get("/search", response_model=ModelsSearchResponse)
-async def search_models(query: str, limit: int = 20, filter_tags: Optional[str] = None):
+def search_models(query: str, limit: int = 20, filter_tags: Optional[str] = None):
     """
     Search for models on HuggingFace Hub
     
@@ -101,57 +101,45 @@ def get_hf_token() -> Optional[str]:
 
 
 @router.post("/download")
-async def download_model(request: ModelDownloadRequest):
+def download_model(request: ModelDownloadRequest):
     """
-    Download a model from HuggingFace Hub
-    
-    Args:
-        request: Model download configuration
-        
-    Returns:
-        Download job information
+    Download a model from the Hugging Face Hub into the local models directory.
+
+    Runs in the threadpool (this is a plain ``def``) so a long download doesn't block the
+    server.  With ``filename`` only that file is fetched, which is what you want for GGUF repos.
     """
     try:
-        # Determine download path
         models_dir = Path(settings.models_dir)
         models_dir.mkdir(parents=True, exist_ok=True)
-        
-        model_name = request.model_name.replace('/', '_')
-        output_path = models_dir / model_name
-        
-        logger.info(f"Downloading model: {request.model_name} to {output_path}")
-        
-        # Get HuggingFace token if available
+
+        output_path = models_dir / request.model_name.replace('/', '_')
+        logger.info(f"Downloading {request.model_name} ({request.filename or 'full repo'}) to {output_path}")
+
         hf_token = get_hf_token()
-        if hf_token:
-            logger.info("Using authenticated HuggingFace token for download")
+        if request.filename:
+            hf_hub_download(
+                repo_id=request.model_name,
+                filename=request.filename,
+                revision=request.revision,
+                local_dir=str(output_path),
+                token=hf_token,
+            )
         else:
-            logger.info("Downloading without authentication (public models only)")
-        
-        # Download model
-        # Note: This is synchronous and may take time - should be background task in production
-        snapshot_path = snapshot_download(
-            repo_id=request.model_name,
-            revision=request.revision,
-            cache_dir=str(output_path),
-            local_dir=str(output_path),
-            local_dir_use_symlinks=False,
-            token=hf_token  # Use token if available
-        )
-        
-        logger.info(f"Model downloaded successfully to {snapshot_path}")
-        
-        # Get model size
-        size_bytes = sum(f.stat().st_size for f in output_path.rglob('*') if f.is_file())
-        size_mb = size_bytes / (1024 ** 2)
-        
+            snapshot_download(
+                repo_id=request.model_name,
+                revision=request.revision,
+                local_dir=str(output_path),
+                ignore_patterns=["*.gguf", "*.msgpack", "*.h5", "*.onnx", "original/*"],
+                token=hf_token,
+            )
+
+        size_mb = sum(f.stat().st_size for f in output_path.rglob('*') if f.is_file()) / (1024 ** 2)
         return {
-            "job_id": f"download_{model_name}",
             "status": "completed",
             "model_name": request.model_name,
             "local_path": str(output_path),
             "size_mb": round(size_mb, 2),
-            "message": "Model downloaded successfully"
+            "message": "Model downloaded successfully",
         }
     except Exception as e:
         logger.error(f"Model download failed: {e}")

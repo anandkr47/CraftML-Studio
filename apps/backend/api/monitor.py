@@ -1,131 +1,31 @@
 """
-Monitoring API Routes
-Handles system resource monitoring endpoints
+System Monitor API: live telemetry, history, OOM alerts and context-fit checks.
 """
 
-from fastapi import APIRouter, HTTPException
-from services.monitoring.resource import (
-    get_system_metrics,
-    get_gpu_metrics,
-    get_cpu_metrics,
-    get_memory_metrics,
-    get_disk_metrics
-)
-from models.responses import ResourceMetricsResponse
+from fastapi import APIRouter, HTTPException, Query
+
+from services.inference import InferenceError
+from services.monitoring import alerts, telemetry
 
 router = APIRouter()
 
 
-@router.get("/metrics")
-async def get_metrics():
-    """
-    Get all system metrics
-    
-    Returns:
-        Complete system metrics (CPU, memory, disk, GPU)
-    """
-    try:
-        metrics = get_system_metrics()
-        return metrics
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
-
-
-@router.get("/system", response_model=ResourceMetricsResponse)
-async def get_system_metrics_api():
-    """
-    Get system metrics (alias for /metrics)
-    
-    Returns:
-        Complete system metrics
-    """
-    try:
-        metrics = get_system_metrics()
-        return ResourceMetricsResponse(**metrics)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
-
-
-@router.get("/gpu")
-async def get_gpu_info():
-    """
-    Get GPU-specific metrics
-    
-    Returns:
-        GPU information and utilization
-    """
-    try:
-        return get_gpu_metrics()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/cpu")
-async def get_cpu_info():
-    """
-    Get CPU-specific metrics
-    
-    Returns:
-        CPU information and utilization
-    """
-    try:
-        return get_cpu_metrics()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/memory")
-async def get_memory_info():
-    """
-    Get memory metrics
-    
-    Returns:
-        Memory usage information
-    """
-    try:
-        return get_memory_metrics()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/disk")
-async def get_disk_info():
-    """
-    Get disk metrics
-    
-    Returns:
-        Disk usage information
-    """
-    try:
-        return get_disk_metrics()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/snapshot")
+def snapshot():
+    """Current CPU / RAM / GPU readings plus any active alerts."""
+    reading = telemetry.sample()
+    return {**reading, "alerts": alerts.evaluate(reading)}
 
 
 @router.get("/history")
-async def get_metrics_history(limit: int = 60):
-    """
-    Get historical metrics
-    
-    Args:
-        limit: Number of data points to return
-        
-    Returns:
-        Historical metrics data
-    """
+def history(limit: int = Query(60, ge=1, le=telemetry.HISTORY_SECONDS)):
+    return {"points": telemetry.history(limit)}
+
+
+@router.get("/context-check")
+def context_check(model_id: str, context: int = Query(..., ge=1, le=1_000_000)):
+    """Estimate whether ``context`` tokens fit in memory for a local model."""
     try:
-        from core.ml.utils import ResourceMonitor
-        
-        # Create monitor instance
-        monitor = ResourceMonitor()
-        
-        # Get historical data (if available)
-        history = monitor.get_history(limit=limit)
-        
-        return {
-            "history": history,
-            "limit": limit,
-            "count": len(history)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return alerts.check_context_fit(model_id, context, telemetry.sample())
+    except InferenceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))

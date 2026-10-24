@@ -15,13 +15,16 @@ from pathlib import Path
 from typing import Generator
 
 from sqlalchemy import (
+    Boolean,
     Column,
-    DateTime,
     Float,
-    Integer,
+    LargeBinary,
+    DateTime,
+        Integer,
     String,
     Text,
     create_engine,
+    event,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -60,6 +63,21 @@ engine = create_engine(
     connect_args={"check_same_thread": False},
     future=True,
 )
+
+
+@event.listens_for(engine, "connect")
+def _load_sqlite_vec(dbapi_connection, _record) -> None:
+    """Load the sqlite-vec extension when available (the KB falls back to brute force without it)."""
+    try:
+        import sqlite_vec
+
+        dbapi_connection.enable_load_extension(True)
+        sqlite_vec.load(dbapi_connection)
+        dbapi_connection.enable_load_extension(False)
+    except Exception:  # noqa: BLE001 - optional extension
+        pass
+
+
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
@@ -109,19 +127,72 @@ class JobLog(Base):
     message = Column(Text, nullable=False)
 
 
-class Dataset(Base):
-    """Optional dataset metadata table."""
+class JobMetric(Base):
+    """One logged training step (for loss curves and resource charts)."""
 
-    __tablename__ = "datasets"
+    __tablename__ = "job_run_metrics"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(64), nullable=False, index=True)
+    step = Column(Integer, nullable=False)
+    epoch = Column(Float, nullable=True)
+    loss = Column(Float, nullable=True)
+    learning_rate = Column(Float, nullable=True)
+    vram_gb = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ChatSession(Base):
+    """A persisted chat conversation and its generation settings."""
+
+    __tablename__ = "chat_sessions"
+
+    id = Column(String(32), primary_key=True)
+    title = Column(String(255), nullable=False, default="New chat")
+    model_id = Column(String(255), nullable=True)
+    system_prompt = Column(Text, nullable=True)
+    params = Column(Text, nullable=True)  # JSON: temperature, top_p, ...
+    use_kb = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ChatMessage(Base):
+    """One message in a chat session. ``sources`` holds RAG citations (JSON)."""
+
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(32), nullable=False, index=True)
+    role = Column(String(16), nullable=False)
+    content = Column(Text, nullable=False)
+    sources = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class KbDocument(Base):
+    """A document ingested into the local knowledge base."""
+
+    __tablename__ = "kb_documents"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), nullable=False)
-    file_path = Column(Text, nullable=False)
-    format = Column(String(32), nullable=True)
-    size_mb = Column(Float, nullable=True)
-    num_samples = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=True)
-    description = Column(Text, nullable=True)
+    ext = Column(String(16), nullable=False)
+    size_bytes = Column(Integer, nullable=False, default=0)
+    num_chunks = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class KbChunk(Base):
+    """A text chunk with its embedding (float32 blob, L2-normalised)."""
+
+    __tablename__ = "kb_chunks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    document_id = Column(Integer, nullable=False, index=True)
+    chunk_index = Column(Integer, nullable=False)
+    text = Column(Text, nullable=False)
+    embedding = Column(LargeBinary, nullable=False)
 
 
 def _migrate_legacy_training_jobs() -> None:

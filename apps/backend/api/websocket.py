@@ -9,6 +9,7 @@ import contextlib
 import logging
 
 from services import jobs
+from services.monitoring import alerts, telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -98,33 +99,18 @@ async def websocket_metrics(websocket: WebSocket, job_id: str):
 
 @router.websocket("/monitor")
 async def websocket_system_monitor(websocket: WebSocket):
-    """
-    Stream system resource metrics in real-time
-    
-    Args:
-        websocket: WebSocket connection
-    """
+    """Stream telemetry (with alerts) every two seconds."""
     await websocket.accept()
-    logger.info("Client connected to system monitor stream")
-    
     try:
-        from services.monitoring.resource import get_system_metrics
-        
         while True:
-            # Get current metrics
-            metrics = get_system_metrics()
-            
-            # Send to client
-            await websocket.send_json({
-                "type": "system_metrics",
-                "timestamp": asyncio.get_event_loop().time(),
-                "data": metrics
-            })
-            
-            # Wait 2 seconds before next update
-            await asyncio.sleep(2)
-            
+            reading = await asyncio.to_thread(telemetry.sample)
+            reading["alerts"] = await asyncio.to_thread(alerts.evaluate, reading)
+            await websocket.send_json({"type": "metrics", **reading})
+            await asyncio.sleep(2.0)
     except WebSocketDisconnect:
-        logger.info("Client disconnected from system monitor")
+        pass
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+        logger.error(f"System monitor stream error: {e}")
+    finally:
+        with contextlib.suppress(Exception):
+            await websocket.close()

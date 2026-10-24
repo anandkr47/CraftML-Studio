@@ -1,207 +1,73 @@
 """
-Deployment API Routes
-Handles model deployment endpoints with Pydantic validation
+Deployment API
+Local OpenAI-compatible server and Hugging Face export.
 """
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
-from services.deployment_service import (
-    start_deployment,
-    stop_deployment,
-    get_status,
-    get_endpoints,
-    list_deployments
-)
-from models.requests import LocalDeploymentRequest, HuggingFaceDeploymentRequest
+from fastapi import APIRouter, HTTPException
+
+from models.requests import HuggingFaceDeploymentRequest, LocalDeploymentRequest
 from models.responses import (
-    LocalDeploymentResponse,
+    DeploymentsListResponse,
     HuggingFaceDeploymentResponse,
-    DeploymentsListResponse
+    LocalDeploymentResponse,
 )
+from services import api_server, deployment_service as svc
+from services.inference import InferenceError
 
 router = APIRouter()
 
 
 @router.post("/local", response_model=LocalDeploymentResponse)
-async def deploy_local_api(request: LocalDeploymentRequest, background_tasks: BackgroundTasks):
-    """
-    Deploy model as local API server
-    
-    Args:
-        request: Local deployment configuration
-        background_tasks: FastAPI background tasks
-        
-    Returns:
-        Deployment ID and endpoint URLs
-    """
+def deploy_local_api(request: LocalDeploymentRequest):
+    """Start the local OpenAI-compatible API server."""
     try:
-        # Start deployment
-        deployment_id = start_deployment({
-            "type": "local",
-            "model_path": request.model_path,
-            "port": request.port,
-            "device": request.device
-        })
-        
-        # Get deployment info
-        deployment_info = get_status(deployment_id)
-        
-        if deployment_info.get("status") == "failed":
-            raise HTTPException(
-                status_code=500,
-                detail=deployment_info.get("error", "Deployment failed")
-            )
-        
-        return LocalDeploymentResponse(
-            deployment_id=deployment_id,
-            url=deployment_info.get("url", f"http://127.0.0.1:{request.port}"),
-            endpoints=deployment_info.get("endpoints", {
-                "generate": f"http://127.0.0.1:{request.port}/generate",
-                "health": f"http://127.0.0.1:{request.port}/health"
-            }),
-            status=deployment_info.get("status", "running")
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Deployment failed: {str(e)}")
+        deployment_id = svc.start_local(request.model_id, request.port, request.api_key, request.allow_lan)
+    except (api_server.ServerError, InferenceError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    info = svc.get_status(deployment_id)
+    return LocalDeploymentResponse(
+        deployment_id=deployment_id,
+        url=info["url"],
+        base_url=info["base_url"],
+        endpoints=info["endpoints"],
+        auth_required=info["result"].get("auth_required", False),
+    )
 
 
 @router.post("/huggingface", response_model=HuggingFaceDeploymentResponse)
-async def deploy_huggingface_api(
-    request: HuggingFaceDeploymentRequest,
-    background_tasks: BackgroundTasks
-):
-    """
-    Deploy model to HuggingFace Hub
-    
-    Args:
-        request: HuggingFace deployment configuration
-        background_tasks: FastAPI background tasks
-        
-    Returns:
-        Deployment ID and repository URL
-    """
+def deploy_huggingface_api(request: HuggingFaceDeploymentRequest):
+    """Start a Hugging Face export; poll /status/{deployment_id} for completion."""
     try:
-        # Start deployment
-        deployment_id = start_deployment({
-            "type": "huggingface",
-            "model_path": request.model_path,
-            "repo_name": request.repo_name,
-            "hf_token": request.hf_token,
-            "private": request.private,
-            "create_space": request.create_space
-        })
-        
-        # Get deployment info
-        deployment_info = get_status(deployment_id)
-        
-        if deployment_info.get("status") == "failed":
-            raise HTTPException(
-                status_code=500,
-                detail=deployment_info.get("error", "Deployment failed")
-            )
-        
-        result = deployment_info.get("result", {})
-        
-        return HuggingFaceDeploymentResponse(
-            deployment_id=deployment_id,
-            repo_url=result.get("url", f"https://huggingface.co/{request.repo_name}"),
-            status=result.get("status", "uploaded"),
-            space_url=result.get("space", {}).get("space_url") if request.create_space else None
+        deployment_id = svc.start_huggingface(
+            request.model_id, request.repo_name, request.hf_token, request.private, request.description
         )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Deployment failed: {str(e)}")
+    except (InferenceError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return HuggingFaceDeploymentResponse(deployment_id=deployment_id, status="running")
 
 
 @router.get("/list", response_model=DeploymentsListResponse)
-async def list_active_deployments():
-    """
-    List all active deployments
-    
-    Returns:
-        List of deployments
-    """
-    try:
-        result = list_deployments()
-        deployments = result.get("deployments", [])
-        
-        return DeploymentsListResponse(
-            deployments=deployments,
-            total=len(deployments)
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def list_active_deployments():
+    deployments = svc.list_deployments()["deployments"]
+    return DeploymentsListResponse(deployments=deployments, total=len(deployments))
 
 
 @router.post("/stop/{deployment_id}")
-async def stop_deployment_api(deployment_id: str):
-    """
-    Stop a running deployment
-    
-    Args:
-        deployment_id: Deployment identifier
-        
-    Returns:
-        Stop confirmation
-    """
-    try:
-        success = stop_deployment(deployment_id)
-        
-        if not success:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Deployment {deployment_id} not found"
-            )
-        
-        return {
-            "stopped": True,
-            "deployment_id": deployment_id,
-            "message": "Deployment stopped successfully"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def stop_deployment_api(deployment_id: str):
+    if not svc.stop_deployment(deployment_id):
+        raise HTTPException(status_code=404, detail=f"Deployment {deployment_id} not found")
+    return {"stopped": True, "deployment_id": deployment_id}
 
 
 @router.get("/endpoints")
-async def get_active_endpoints():
-    """
-    Get all active deployment endpoints
-    
-    Returns:
-        List of active endpoints
-    """
-    try:
-        return get_endpoints()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def get_active_endpoints():
+    return svc.get_endpoints()
 
 
 @router.get("/status/{deployment_id}")
-async def deployment_status(deployment_id: str):
-    """
-    Get deployment status
-    
-    Args:
-        deployment_id: Deployment identifier
-        
-    Returns:
-        Deployment status
-    """
-    try:
-        status = get_status(deployment_id)
-        
-        if status.get("status") == "not_found":
-            raise HTTPException(
-                status_code=404,
-                detail=f"Deployment {deployment_id} not found"
-            )
-        
-        return status
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def deployment_status(deployment_id: str):
+    status = svc.get_status(deployment_id)
+    if status.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=f"Deployment {deployment_id} not found")
+    return status
