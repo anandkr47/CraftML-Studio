@@ -1,6 +1,6 @@
 """
 Example: Dataset Management
-Demonstrates crawling, cleaning, formatting, and loading
+Demonstrates formatting and loading
 """
 
 import sys
@@ -10,47 +10,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from core.data import (
-    TextCleaner,
     DatasetFormatter,
     DatasetLoader,
     format_for_instruction_tuning,
     save_as_jsonl
 )
-
-
-def example_cleaning():
-    """Example of text cleaning"""
-    
-    print("="*60)
-    print("EXAMPLE: Text Cleaning")
-    print("="*60 + "\n")
-    
-    # Sample dirty text
-    dirty_texts = [
-        "Check this out: https://example.com   with lots of   spaces",
-        "Contact us at info@example.com or visit http://site.org",
-        "This    has     irregular       spacing!",
-    ]
-    
-    # Create cleaner
-    cleaner = TextCleaner(
-        remove_urls=True,
-        remove_emails=True,
-        remove_extra_whitespace=True
-    )
-    
-    print("Original texts:")
-    for i, text in enumerate(dirty_texts, 1):
-        print(f"  {i}. {text}")
-    
-    # Clean texts
-    cleaned_texts = cleaner.clean_batch(dirty_texts)
-    
-    print("\nCleaned texts:")
-    for i, text in enumerate(cleaned_texts, 1):
-        print(f"  {i}. {text}")
-    
-    print("\n✅ Text cleaning complete")
 
 
 def example_formatting():
@@ -132,7 +96,6 @@ def example_loading():
 
 def run_all_examples():
     """Run all dataset examples"""
-    example_cleaning()
     example_formatting()
     example_loading()
     

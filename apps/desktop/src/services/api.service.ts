@@ -5,9 +5,10 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import * as Types from '../types/api.types';
+import { API_BASE } from '../config';
 
 // API Configuration
-export const API_BASE_URL = 'http://127.0.0.1:5000';
+export const API_BASE_URL = API_BASE;
 
 class APIService {
   private client: AxiosInstance;
@@ -126,41 +127,6 @@ class APIService {
   }
 
   // =========================================================================
-  // Crawler API
-  // =========================================================================
-
-  async startCrawler(params: Types.CrawlerStartRequest): Promise<Types.JobResponse> {
-    return this.post('/api/crawler/start', params);
-  }
-
-  async getCrawlerStatus(jobId: string): Promise<Types.CrawlerStatus> {
-    return this.get(`/api/crawler/status/${jobId}`);
-  }
-
-  async getCrawlerPreview(jobId: string, limit?: number): Promise<{
-    job_id: string;
-    data: Types.CrawledPage[];
-  }> {
-    return this.get(`/api/crawler/preview/${jobId}`, { limit });
-  }
-
-  async stopCrawler(jobId: string): Promise<{ success: boolean }> {
-    return this.post(`/api/crawler/stop/${jobId}`);
-  }
-
-  async listCrawlerJobs(): Promise<{ jobs: Types.CrawlerJob[] }> {
-    return this.get('/api/crawler/jobs');
-  }
-
-  async saveCrawlerDataset(jobId: string, outputPath: string): Promise<{
-    success: boolean;
-    path: string;
-    samples: number;
-  }> {
-    return this.post(`/api/crawler/save_dataset/${jobId}`, { output_path: outputPath });
-  }
-
-  // =========================================================================
   // Compression API
   // =========================================================================
 
@@ -261,34 +227,6 @@ class APIService {
   }
 
   // =========================================================================
-  // Task Orchestration API
-  // =========================================================================
-
-  async getTaskStatus(taskId: string): Promise<Types.TaskStatus> {
-    return this.get(`/api/tasks/status/${taskId}`);
-  }
-
-  async cancelTask(taskId: string): Promise<{ success: boolean; message: string }> {
-    return this.post(`/api/tasks/cancel/${taskId}`);
-  }
-
-  async getActiveTasks(): Promise<{ tasks: Types.TaskStatus[] }> {
-    return this.get('/api/tasks/active');
-  }
-
-  async getWorkerInfo(): Promise<{ workers: any[] }> {
-    return this.get('/api/tasks/workers');
-  }
-
-  async getTaskHealth(): Promise<{ status: string; broker_connected: boolean; workers_active: number }> {
-    return this.get('/api/tasks/health');
-  }
-
-  async getTaskStats(): Promise<{ stats: any }> {
-    return this.get('/api/tasks/stats');
-  }
-
-  // =========================================================================
   // Job History API
   // =========================================================================
 
@@ -312,37 +250,7 @@ class APIService {
   }
 
   async deleteJob(jobId: string): Promise<{ success: boolean; message: string }> {
-    return this.delete(`/api/jobs/${jobId}/delete`);
-  }
-
-  // =========================================================================
-  // Deduplication API
-  // =========================================================================
-
-  async deduplicateData(params: Types.DeduplicationRequest): Promise<Types.DeduplicationResult> {
-    return this.post('/api/dedup/deduplicate', params);
-  }
-
-  async checkDuplicate(text: string, namespace?: string): Promise<{
-    is_duplicate: boolean;
-    hash?: string;
-  }> {
-    return this.post('/api/dedup/check', { text, namespace });
-  }
-
-  async getDeduplicationStats(namespace?: string): Promise<Types.DeduplicationStats> {
-    return this.get('/api/dedup/stats', { namespace });
-  }
-
-  async clearDeduplicationCache(namespace?: string): Promise<{
-    success: boolean;
-    cleared_count: number;
-  }> {
-    return this.post('/api/dedup/clear', { namespace });
-  }
-
-  async getDeduplicationHealth(): Promise<{ status: string; redis_connected: boolean }> {
-    return this.get('/api/dedup/health');
+    return this.delete(`/api/jobs/${jobId}`);
   }
 
   // =========================================================================

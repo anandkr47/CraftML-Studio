@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "craftml-studio"
 version = "0.1.0"
-description = "Local-first AI infrastructure management platform"
+description = "Local AI engine: chat, RAG, LoRA/QLoRA fine-tuning, compression and deployment"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
 authors = [
     {name = "CraftML Studio Team"}
 ]
-keywords = ["ai", "ml", "llm", "training", "deployment", "compression"]
+keywords = ["ai", "ml", "llm", "lora", "qlora", "rag", "quantization", "local-inference"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -25,25 +25,24 @@ classifiers = [
 dependencies = [
     "fastapi",
     "uvicorn",
+    "python-multipart",
     "sqlalchemy",
-    "celery",
-    "redis",
-    "scrapy",
-    "playwright",
-    "beautifulsoup4",
     "torch",
     "transformers",
-    "sentence-transformers",
+    "peft",
+    "accelerate",
     "bitsandbytes",
+    "sentence-transformers",
     "optimum",
-    "faiss-cpu",
+    "onnxruntime",
+    "datasets",
+    "huggingface-hub",
     "psutil",
     "gputil",
-    "langchain",
     "loguru",
-    "docker",
+    "cryptography",
     "pydantic",
-    "aiohttp",
+    "pydantic-settings",
 ]
 
 [project.optional-dependencies]

@@ -3,11 +3,7 @@ Model Hub API Routes
 Handles model search, download, and management from HuggingFace
 """
 
-import sys
 from pathlib import Path
-
-# Add core to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from fastapi import APIRouter, HTTPException
 from huggingface_hub import HfApi, snapshot_download, list_models

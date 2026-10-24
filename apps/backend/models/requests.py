@@ -8,47 +8,6 @@ from datetime import datetime
 
 
 # ============================================================================
-# Crawler Request Models
-# ============================================================================
-
-class CrawlerStartRequest(BaseModel):
-    """Request model for starting a crawl job"""
-    seed_urls: List[str] = Field(..., min_items=1, description="Starting URLs for crawling")
-    max_depth: int = Field(default=3, ge=1, le=10, description="Maximum crawl depth")
-    max_pages: int = Field(default=100, ge=1, le=10000, description="Maximum pages to crawl")
-    timeout: int = Field(default=30, ge=5, le=300, description="Request timeout in seconds")
-    batch_size: int = Field(default=20, ge=10, le=100, description="Pages per processing batch")
-    
-    # Playwright options
-    use_playwright: bool = Field(default=False, description="Enable Playwright for JavaScript rendering")
-    headless: bool = Field(default=True, description="Run browser in headless mode")
-    
-    # AI filtering options
-    query: Optional[str] = Field(default=None, description="Search query for relevance filtering")
-    ai_filter: bool = Field(default=False, description="Enable AI-based content filtering")
-    relevance_threshold: float = Field(default=0.3, ge=0.0, le=1.0, description="Minimum relevance score")
-    top_k: Optional[int] = Field(default=None, ge=1, le=1000, description="Return only top K relevant pages")
-    
-    # Deduplication options
-    use_faiss: bool = Field(default=False, description="Enable FAISS for fast deduplication")
-    
-    @validator('seed_urls')
-    def validate_urls(cls, v):
-        """Validate that URLs are properly formatted"""
-        for url in v:
-            if not url.startswith(('http://', 'https://')):
-                raise ValueError(f"Invalid URL: {url}. Must start with http:// or https://")
-        return v
-
-
-class CrawlerSaveRequest(BaseModel):
-    """Request model for saving crawled data"""
-    job_id: str
-    output_path: str
-    format_type: Literal["jsonl", "csv", "text", "instruction"] = "jsonl"
-
-
-# ============================================================================
 # Training Request Models
 # ============================================================================
 
@@ -78,7 +37,7 @@ class TrainingConfig(BaseModel):
 
 class TrainingStartRequest(BaseModel):
     """Request model for starting a training job"""
-    model_name: Optional[str] = Field(default=None, description="Base model name from HuggingFace (optional for training from scratch)")
+    model_name: Optional[str] = Field(default=None, description="Base model name from HuggingFace or local path")
     dataset_path: Optional[str] = Field(default=None, description="Path to training dataset")
     dataset_id: Optional[int] = Field(default=None, description="Dataset ID (will be resolved to path)")
     output_dir: Optional[str] = Field(default=None, description="Output directory for model")
@@ -90,17 +49,6 @@ class TrainingStartRequest(BaseModel):
         default="qlora",
         description="Training method: QLoRA (4-bit, fastest), LoRA (fast), or Full (best quality)"
     )
-    
-    # Training from scratch options
-    train_from_scratch: bool = Field(default=False, description="Train from scratch without base model")
-    model_type: Optional[Literal["scratch-transformer", "scratch-bert", "scratch-gpt"]] = Field(
-        default=None,
-        description="Model architecture when training from scratch"
-    )
-    vocab_size: Optional[int] = Field(default=32000, ge=1000, le=100000, description="Vocabulary size for scratch training")
-    hidden_size: Optional[int] = Field(default=768, description="Hidden layer size")
-    num_layers: Optional[int] = Field(default=12, ge=1, le=48, description="Number of transformer layers")
-    num_heads: Optional[int] = Field(default=12, ge=1, le=32, description="Number of attention heads")
     
     @validator('dataset_path')
     def validate_dataset_path(cls, v):
@@ -116,13 +64,8 @@ class TrainingStartRequest(BaseModel):
         if not self.dataset_path and not self.dataset_id:
             raise ValueError("Either dataset_path or dataset_id must be provided")
         
-        # Check model_type for scratch training
-        if self.train_from_scratch and not self.model_type:
-            raise ValueError("model_type is required when train_from_scratch is True")
-        
-        # Check model_name for fine-tuning
-        if not self.train_from_scratch and not self.model_name:
-            raise ValueError("model_name is required when train_from_scratch is False")
+        if not self.model_name:
+            raise ValueError("model_name is required")
         
         return self
 
@@ -135,7 +78,7 @@ class CompressionStartRequest(BaseModel):
     """Request model for starting a compression job"""
     model_path: str = Field(..., description="Path to model to compress")
     output_path: str = Field(..., description="Output path for compressed model")
-    method: Literal["int8", "int4", "gptq", "pruning", "distillation"] = Field(
+    method: Literal["int8", "int4", "gptq"] = Field(
         default="int4",
         description="Compression method"
     )

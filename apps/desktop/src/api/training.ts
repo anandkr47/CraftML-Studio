@@ -12,15 +12,10 @@ export async function startTrainingJob(data: {
   dataset_id: number;
   params: any;
 }) {
-  const trainFromScratch = data.params?.train_from_scratch || false;
-  
   return apiService.startTraining({
-    model_name: trainFromScratch ? undefined : data.params?.base_model,
-    dataset_path: String(data.dataset_id), // Backend will resolve this to file path
-    dataset_id: data.dataset_id, // Send both for backend resolution
+    model_name: data.params?.base_model,
+    dataset_id: data.dataset_id, // Backend resolves this to a file path
     training_method: data.params?.training_method || 'qlora', // Default to QLoRA
-    train_from_scratch: trainFromScratch,
-    model_type: trainFromScratch ? data.params?.model_type : undefined,
     training_config: {
       num_epochs: data.params?.epochs || data.params?.num_epochs || 3,
       batch_size: data.params?.batch_size || 4,

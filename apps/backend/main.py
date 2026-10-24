@@ -14,9 +14,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 # Lazy import heavy modules to speed up startup
 # Import only what's needed for basic API structure
-from api import train, crawler, compress, deploy, monitor, dataset, modelhub, websocket
-from api import dataset_upload, tasks, jobs, dedup, convert, docker_deploy, hardware, settings, playground
-from db.models import Base, engine
+from api import train, compress, deploy, monitor, dataset, modelhub, websocket
+from api import dataset_upload, jobs, convert, docker_deploy, hardware, settings, playground
+from db.models import init_db
+from services import jobs
 from core.utils import setup_logger
 from core.config import settings as app_settings
 from models.responses import ErrorResponse
@@ -30,10 +31,12 @@ app = FastAPI(
     version="0.1.0"
 )
 
-# Create tables at startup (lazy - only if needed)
-# This is fast and doesn't block if tables already exist
+# Create tables, migrate legacy data, and fail jobs orphaned by a previous run
 try:
-    Base.metadata.create_all(bind=engine, checkfirst=True)
+    init_db()
+    interrupted = jobs.fail_interrupted_jobs()
+    if interrupted:
+        logger.warning(f"Marked {interrupted} interrupted job(s) as failed")
 except Exception as e:
     logger.warning(f"Database initialization note: {e}")
 
@@ -83,7 +86,6 @@ async def general_exception_handler(request, exc):
 
 
 # API routes
-app.include_router(crawler.router, prefix="/api/crawler", tags=["Crawler"])
 app.include_router(train.router, prefix="/api/train", tags=["Training"])
 app.include_router(compress.router, prefix="/api/compress", tags=["Compression"])
 app.include_router(deploy.router, prefix="/api/deploy", tags=["Deployment"])
@@ -92,9 +94,7 @@ app.include_router(dataset.router, prefix="/api/dataset", tags=["Dataset"])
 app.include_router(dataset_upload.router, prefix="/api/dataset-upload", tags=["Dataset Upload"])
 app.include_router(modelhub.router, prefix="/api/modelhub", tags=["Model Hub"])
 app.include_router(websocket.router, prefix="/ws", tags=["WebSocket"])
-app.include_router(tasks.router, prefix="/api/tasks", tags=["Task Orchestration"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Job History"])
-app.include_router(dedup.router, prefix="/api/dedup", tags=["Deduplication"])
 app.include_router(convert.router, prefix="/api/convert", tags=["Model Conversion"])
 app.include_router(docker_deploy.router, prefix="/api/docker", tags=["Docker Deployment"])
 app.include_router(hardware.router, prefix="/api/hardware", tags=["Hardware Detection"])
@@ -110,16 +110,13 @@ async def root():
         "version": "0.1.0",
         "status": "running",
         "endpoints": {
-            "crawler": "/api/crawler",
             "train": "/api/train",
             "compress": "/api/compress",
             "deploy": "/api/deploy",
             "monitor": "/api/monitor",
             "dataset": "/api/dataset",
             "modelhub": "/api/modelhub",
-            "tasks": "/api/tasks",
             "jobs": "/api/jobs",
-            "dedup": "/api/dedup",
             "convert": "/api/convert",
             "docker": "/api/docker",
             "hardware": "/api/hardware",

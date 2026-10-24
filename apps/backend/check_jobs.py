@@ -1,38 +1,25 @@
 #!/usr/bin/env python3
-"""Check training jobs in database"""
+"""Print all jobs recorded in the database."""
 
-from db.models import SessionLocal, TrainingJob
 import json
 
+from db.models import Job, SessionLocal
+
 session = SessionLocal()
-jobs = session.query(TrainingJob).all()
+jobs = session.query(Job).order_by(Job.created_at.desc()).all()
 
 print(f"\n=== Total jobs in DB: {len(jobs)} ===\n")
 
 for job in jobs:
-    print(f"Job ID: {job.job_id}")
+    print(f"Job ID: {job.job_id} ({job.job_type})")
     print(f"  Status: {job.status}")
     print(f"  Created: {job.created_at}")
-    
-    # Parse params
     try:
-        params = json.loads(job.params) if isinstance(job.params, str) else {}
-        print(f"  Model: {params.get('model_name', 'from scratch')}")
-        print(f"  Dataset: {params.get('dataset_path', 'unknown')}")
-    except:
-        print(f"  Params: (error parsing)")
-    
-    # Parse progress
-    try:
-        if job.progress:
-            progress = json.loads(job.progress) if isinstance(job.progress, str) else {}
-            print(f"  Progress: {progress}")
-        else:
-            print(f"  Progress: None")
-    except:
-        print(f"  Progress: (error parsing)")
-    
+        params = json.loads(job.params) if job.params else {}
+        print(f"  Params: {params}")
+        print(f"  Progress: {json.loads(job.progress) if job.progress else None}")
+    except ValueError:
+        print("  (error parsing params/progress)")
     print()
 
 session.close()
-

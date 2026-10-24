@@ -24,6 +24,7 @@ import { HStack, VStack } from './ui/Stack';
 import { Modal } from './ui/Modal';
 import { Textarea } from './ui/Textarea';
 import { useNotificationStore } from '../store/notificationStore';
+import { API_BASE } from '../config';
 
 interface Dataset {
   dataset_id?: string;
@@ -40,7 +41,7 @@ interface Dataset {
 }
 
 interface ModelOption {
-  type: 'pretrained' | 'scratch';
+  type: 'pretrained';
 }
 
 interface DatasetSelectorProps {
@@ -77,7 +78,7 @@ const CURATED_DATASETS = [
 ];
 
 export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
-  selectedModel,
+  selectedModel: _selectedModel,
   selectedDataset,
   onDatasetSelect,
 }) => {
@@ -93,8 +94,6 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
 
   const { success: showSuccess, error: showError, info: showInfo } = useNotificationStore();
 
-  const isFromScratch = selectedModel?.type === 'scratch';
-
   useEffect(() => {
     loadDatasets();
   }, []);
@@ -102,7 +101,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
   const loadDatasets = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/dataset/list');
+      const response = await fetch(`${API_BASE}/api/dataset/list`);
       if (response.ok) {
         const data = await response.json();
         // Add file_path to each dataset
@@ -153,7 +152,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
       formData.append('name', uploadName);
       formData.append('description', uploadDescription);
 
-      const response = await fetch('http://127.0.0.1:5000/api/dataset-upload/upload', {
+      const response = await fetch(`${API_BASE}/api/dataset-upload/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -199,9 +198,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
               Dataset Selection
             </CardTitle>
             <CardDescription>
-              {isFromScratch
-                ? 'Import or upload your custom dataset for training from scratch'
-                : 'Choose a curated instruction dataset or upload your own'}
+              Choose a curated instruction dataset or upload your own
             </CardDescription>
           </div>
           <HStack spacing={2}>
@@ -236,8 +233,8 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
             leftIcon={<Search className="w-4 h-4" />}
           />
 
-          {/* Curated Datasets (for fine-tuning) */}
-          {!isFromScratch && (
+          {/* Curated Datasets */}
+          {(
             <div>
               <h4 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
                 Curated Instruction Datasets
@@ -277,7 +274,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
           {/* User Datasets */}
           <div>
             <h4 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
-              {isFromScratch ? 'Your Datasets' : 'Custom Datasets'}
+              Custom Datasets
             </h4>
 
             {loading ? (
@@ -414,7 +411,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
                   Upload Your Training Dataset
                 </h4>
                 <p className="text-sm text-brand-700 dark:text-brand-300">
-                  Upload instruction-output pairs for fine-tuning or raw text for training from scratch
+                  Upload instruction-output pairs for fine-tuning
                 </p>
               </div>
             </HStack>
@@ -533,7 +530,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
                   <div className="flex gap-2">
                     <Badge variant="default" size="sm">TXT</Badge>
                     <span className="flex-1 text-neutral-600 dark:text-neutral-400">
-                      Plain text (for training from scratch)
+                      Plain text
                     </span>
                   </div>
                 </div>

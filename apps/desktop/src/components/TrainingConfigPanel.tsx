@@ -23,7 +23,7 @@ interface TrainingConfig {
 }
 
 interface ModelOption {
-  type: 'pretrained' | 'scratch';
+  type: 'pretrained';
   id: string;
   name: string;
 }
@@ -84,13 +84,12 @@ const PRESETS = {
 };
 
 export const TrainingConfigPanel: React.FC<TrainingConfigPanelProps> = ({
-  selectedModel,
+  selectedModel: _selectedModel,
   config,
   onChange,
   onPresetSelect,
 }) => {
   const [activePreset, setActivePreset] = useState<string | null>(null);
-  const isFromScratch = selectedModel?.type === 'scratch';
 
   const handlePresetClick = (presetKey: string) => {
     const preset = PRESETS[presetKey as keyof typeof PRESETS];
@@ -134,9 +133,7 @@ export const TrainingConfigPanel: React.FC<TrainingConfigPanelProps> = ({
               Training Configuration
             </CardTitle>
             <CardDescription>
-              {isFromScratch
-                ? 'Configure from-scratch training parameters'
-                : 'Configure fine-tuning and LoRA parameters'}
+              Configure fine-tuning and LoRA parameters
             </CardDescription>
           </div>
           <Button
@@ -260,8 +257,8 @@ export const TrainingConfigPanel: React.FC<TrainingConfigPanelProps> = ({
             </div>
           </div>
 
-          {/* LoRA Parameters (only for fine-tuning) */}
-          {!isFromScratch && (
+          {/* LoRA Parameters */}
+          {(
             <div>
               <h4 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
                 LoRA Configuration

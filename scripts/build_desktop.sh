@@ -128,9 +128,7 @@ NUITKA_ARGS=(
   --include-package=services
   --include-package=db
   --include-package=models
-  --include-package=tasks
   --include-package=core
-  --include-package=plugins
   --include-data-dir=resources=resources
   --include-package=uvicorn
   --include-package=fastapi
@@ -160,9 +158,7 @@ fi
   --include-package=services \
   --include-package=db \
   --include-package=models \
-  --include-package=tasks \
   --include-package=core \
-  --include-package=plugins \
   --include-data-dir=resources=resources \
 # Copy entire backend directory into Tauri bin (--standalone includes all dependencies)
 # Nuitka creates dist/main.dist/ with main + all .so, .dylib files, etc.

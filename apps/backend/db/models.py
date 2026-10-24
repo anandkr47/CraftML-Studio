@@ -1,8 +1,8 @@
 """
 SQLAlchemy models and database session helpers.
 
-The backend primarily tracks training jobs and (optionally) datasets using
-SQLite.  The database file lives inside the writable user-data directory when
+The backend tracks jobs (fine-tune, compress, deploy), job logs and dataset
+metadata using SQLite.  The database file lives inside the writable user-data directory when
 the app is packaged, and falls back to the repository copy during development.
 """
 
@@ -69,26 +69,44 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 
-class TrainingJob(Base):
-    """Persistent record of long-running training operations."""
+class Job(Base):
+    """
+    Unified record for every long-running operation.
 
-    __tablename__ = "training_jobs"
+    ``job_type`` is one of ``finetune``, ``compress`` or ``deploy``.  JSON blobs
+    (params, progress, result) are stored as text for simplicity.
+    """
+
+    __tablename__ = "job_runs"
 
     id = Column(Integer, primary_key=True, index=True)
     job_id = Column(String(64), unique=True, nullable=False, index=True)
+    job_type = Column(String(32), nullable=False, index=True)
     status = Column(String(32), nullable=False, default="pending", index=True)
-    params = Column(Text, nullable=True)  # JSON blob
-    logs = Column(Text, nullable=True)  # Optional serialized logs
-    progress = Column(Text, nullable=True)  # JSON blob describing progress
+    params = Column(Text, nullable=True)
+    progress = Column(Text, nullable=True)
+    result = Column(Text, nullable=True)
     error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
-        nullable=True,
+        nullable=False,
     )
+    started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
+
+
+class JobLog(Base):
+    """Append-only log lines for a job."""
+
+    __tablename__ = "job_run_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(64), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    message = Column(Text, nullable=False)
 
 
 class Dataset(Base):
@@ -106,10 +124,45 @@ class Dataset(Base):
     description = Column(Text, nullable=True)
 
 
+def _migrate_legacy_training_jobs() -> None:
+    """Copy rows from the pre-unification ``training_jobs`` table into ``job_runs``."""
+
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if "training_jobs" not in insp.get_table_names():
+        return
+
+    legacy_cols = {c["name"] for c in insp.get_columns("training_jobs")}
+    updated_expr = (
+        "COALESCE(updated_at, CURRENT_TIMESTAMP)"
+        if "updated_at" in legacy_cols
+        else "CURRENT_TIMESTAMP"
+    )
+    completed_expr = "completed_at" if "completed_at" in legacy_cols else "NULL"
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            f"""
+            INSERT INTO job_runs
+                (job_id, job_type, status, params, progress, error,
+                 created_at, updated_at, completed_at)
+            SELECT job_id, 'finetune', status, params, progress, error,
+                   COALESCE(created_at, CURRENT_TIMESTAMP),
+                   {updated_expr},
+                   {completed_expr}
+            FROM training_jobs
+            WHERE job_id NOT IN (SELECT job_id FROM job_runs)
+            """
+        ))
+        conn.execute(text("DROP TABLE training_jobs"))
+
+
 def init_db() -> None:
-    """Create tables if they do not exist."""
+    """Create tables if they do not exist and migrate legacy data."""
 
     Base.metadata.create_all(bind=engine, checkfirst=True)
+    _migrate_legacy_training_jobs()
 
 
 def get_db() -> Generator:

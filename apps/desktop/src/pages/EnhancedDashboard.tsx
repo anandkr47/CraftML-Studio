@@ -344,10 +344,6 @@ const EnhancedDashboard: React.FC = () => {
               Start Training
             </Button>
             <Button variant="outline" fullWidth>
-              <Activity className="w-4 h-4" />
-              Run Crawler
-            </Button>
-            <Button variant="outline" fullWidth>
               <Cpu className="w-4 h-4" />
               Compress Model
             </Button>

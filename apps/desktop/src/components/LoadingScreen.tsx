@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { API_BASE } from '../config';
 
 interface Feature {
   icon: string;
@@ -24,14 +25,9 @@ const features: Feature[] = [
     description: "Create, manage, and prepare datasets for training with advanced preprocessing"
   },
   {
-    icon: "🕷️",
-    title: "Web Crawler",
-    description: "Automatically collect and process web data for training datasets"
-  },
-  {
     icon: "🗜️",
     title: "Model Compression",
-    description: "Optimize model size with quantization and pruning techniques"
+    description: "Optimize model size with quantization"
   },
   {
     icon: "🚢",
@@ -86,7 +82,7 @@ export default function LoadingScreen() {
           try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 1000);
-            const response = await fetch("http://127.0.0.1:5000/api/health", {
+            const response = await fetch(`${API_BASE}/api/health`, {
               method: "GET",
               signal: controller.signal,
             });

@@ -3,11 +3,7 @@ Dataset API Routes
 Handles dataset management endpoints
 """
 
-import sys
 from pathlib import Path
-
-# Add core to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse

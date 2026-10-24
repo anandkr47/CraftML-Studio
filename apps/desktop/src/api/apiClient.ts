@@ -6,8 +6,9 @@
  */
 
 import { apiService } from '../services/api.service';
+import { API_BASE } from '../config';
 
-export const API_BASE = 'http://127.0.0.1:5000';
+export { API_BASE };
 
 // Re-export the unified API service only; legacy client removed to avoid TS errors
 export const api = apiService;

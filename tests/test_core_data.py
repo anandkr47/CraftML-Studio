@@ -1,6 +1,6 @@
 """
 Test Suite for Core Data Modules
-Tests crawler, cleaner, formatter, and dataset utils
+Tests formatter and dataset utils
 """
 
 import pytest
@@ -12,58 +12,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.data.cleaner import TextCleaner, clean_text
 from core.data.formatter import save_as_jsonl
 from core.data.dataset_utils import DatasetLoader, format_for_instruction_tuning
-
-
-class TestTextCleaner:
-    """Test text cleaning functionality"""
-    
-    def test_url_removal(self):
-        """Test URL removal"""
-        cleaner = TextCleaner(remove_urls=True)
-        
-        text = "Check this https://example.com and http://test.org"
-        cleaned = cleaner.clean(text)
-        
-        assert "https://" not in cleaned
-        assert "http://" not in cleaned
-        
-        print("✅ URL removal test passed")
-    
-    def test_email_removal(self):
-        """Test email removal"""
-        cleaner = TextCleaner(remove_emails=True)
-        
-        text = "Contact me at test@example.com or admin@site.org"
-        cleaned = cleaner.clean(text)
-        
-        assert "@" not in cleaned or "Contact me at  or" in cleaned
-        
-        print("✅ Email removal test passed")
-    
-    def test_whitespace_normalization(self):
-        """Test whitespace normalization"""
-        cleaner = TextCleaner(remove_extra_whitespace=True)
-        
-        text = "This    has   too     many    spaces"
-        cleaned = cleaner.clean(text)
-        
-        assert "  " not in cleaned
-        assert cleaned == "This has too many spaces"
-        
-        print("✅ Whitespace normalization test passed")
-    
-    def test_clean_function(self):
-        """Test standalone clean_text function"""
-        text = "Dirty text with   spaces and https://example.com"
-        cleaned = clean_text(text)
-        
-        assert isinstance(cleaned, str)
-        assert len(cleaned) > 0
-        
-        print("✅ clean_text function test passed")
 
 
 class TestDatasetFormatter:
@@ -174,13 +124,6 @@ def run_all_tests():
     print("RUNNING CORE DATA TESTS")
     print("="*60 + "\n")
     
-    # Text cleaning tests
-    print("Testing Text Cleaning...")
-    test_cleaner = TestTextCleaner()
-    test_cleaner.test_url_removal()
-    test_cleaner.test_email_removal()
-    test_cleaner.test_whitespace_normalization()
-    test_cleaner.test_clean_function()
     
     # Dataset formatting tests
     print("\nTesting Dataset Formatting...")

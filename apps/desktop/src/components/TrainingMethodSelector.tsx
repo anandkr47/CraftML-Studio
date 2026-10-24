@@ -17,6 +17,7 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/Card';
 import { Badge } from './ui/Badge';
 import { HStack, VStack } from './ui/Stack';
+import { API_BASE } from '../config';
 
 export type TrainingMethod = 'qlora' | 'lora' | 'full';
 
@@ -43,7 +44,7 @@ interface TrainingMethodInfo {
 }
 
 interface TrainingMethodSelectorProps {
-  selectedModel?: { id: string; name: string; type: 'pretrained' | 'scratch' } | null;
+  selectedModel?: { id: string; name: string; type: 'pretrained' } | null;
   selectedMethod: TrainingMethod;
   onMethodSelect: (method: TrainingMethod) => void;
   gpuInfo?: GPUInfo;
@@ -70,7 +71,7 @@ export const TrainingMethodSelector: React.FC<TrainingMethodSelectorProps> = ({
 
   const fetchGPUInfo = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/monitor/metrics');
+      const response = await fetch(`${API_BASE}/api/monitor/metrics`);
       if (response.ok) {
         const data = await response.json();
         if (data.gpus && data.gpus.length > 0) {

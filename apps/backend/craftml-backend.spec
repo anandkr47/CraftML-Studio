@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('main.py', '.'), ('api', 'api'), ('services', 'services'), ('db', 'db'), ('models', 'models'), ('tasks', 'tasks')]
+datas = [('main.py', '.'), ('api', 'api'), ('services', 'services'), ('db', 'db'), ('models', 'models')]
 binaries = []
 hiddenimports = ['uvicorn', 'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'click']
 tmp_ret = collect_all('fastapi')

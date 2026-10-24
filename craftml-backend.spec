@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('apps/backend/main.py', '.'), ('apps/backend/api', 'api'), ('apps/backend/services', 'services'), ('apps/backend/db', 'db'), ('apps/backend/models', 'models'), ('apps/backend/tasks', 'tasks'), ('core', 'core'), ('plugins', 'plugins'), ('resources', 'resources')]
+datas = [('apps/backend/main.py', '.'), ('apps/backend/api', 'api'), ('apps/backend/services', 'services'), ('apps/backend/db', 'db'), ('apps/backend/models', 'models'), ('core', 'core'), ('resources', 'resources')]
 binaries = []
-hiddenimports = ['uvicorn', 'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'click', 'celery', 'celery.fixups', 'celery.app', 'celery.app.trace', 'kombu', 'kombu.utils', 'kombu.utils.imports', 'redis', 'redis.connection', 'core', 'core.config', 'core.config.settings', 'core.utils', 'core.utils.logger', 'core.data', 'core.data.crawler', 'core.data.cleaner', 'core.data.formatter', 'core.data.dataset_utils', 'core.ml', 'core.ml.training', 'core.ml.compression', 'core.ml.deployment', 'core.ml.utils', 'plugins', 'plugins.compression', 'plugins.datasets', 'plugins.exporters']
+hiddenimports = ['uvicorn', 'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'click', 'core', 'core.config', 'core.config.settings', 'core.utils', 'core.utils.logger', 'core.data', 'core.data.formatter', 'core.data.dataset_utils', 'core.ml', 'core.ml.training', 'core.ml.compression', 'core.ml.deployment', 'core.ml.utils']
 tmp_ret = collect_all('fastapi')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('pydantic')
@@ -13,12 +13,6 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('transformers')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('torch')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('celery')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('kombu')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('redis')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 

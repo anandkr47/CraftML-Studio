@@ -285,7 +285,7 @@ export function isValidUrl(url: string): boolean {
  * Validate job ID format
  */
 export function isValidJobId(jobId: string): boolean {
-  // Expected format: prefix_hash (e.g., train_abc123, crawl_def456)
+  // Expected format: prefix_hash (e.g., train_abc123)
   return /^[a-z]+_[a-f0-9]+$/.test(jobId);
 }
 

@@ -134,8 +134,6 @@ export interface TrainingStatus {
     model_name?: string;
     dataset_path?: string;
     training_method?: string;
-    train_from_scratch?: boolean;
-    model_type?: string;
     [key: string]: any;
   };
   metrics?: Record<string, any>;
@@ -161,64 +159,13 @@ export interface TrainingJobCounts {
 }
 
 // ============================================================================
-// Crawler Types
-// ============================================================================
-
-export interface CrawlerStartRequest {
-  seed_urls: string[];
-  max_depth?: number;
-  max_pages?: number;
-  timeout?: number;
-  batch_size?: number;
-  use_playwright?: boolean;
-  headless?: boolean;
-  query?: string;
-  ai_filter?: boolean;
-  relevance_threshold?: number;
-  top_k?: number;
-  use_faiss?: boolean;
-}
-
-export interface CrawlerStatus {
-  job_id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  progress?: {
-    pages_crawled: number;
-    pages_total: number;
-    current_url: string | null;
-  };
-  batches?: Array<{
-    batch_id: number;
-    pages: number;
-    cleaned: boolean;
-  }>;
-  started_at?: string;
-  completed_at?: string;
-  error?: string;
-}
-
-export interface CrawledPage {
-  url: string;
-  title: string;
-  content: string;
-  timestamp: string;
-}
-
-export interface CrawlerJob {
-  job_id: string;
-  status: string;
-  started_at: string;
-  pages_crawled?: number;
-}
-
-// ============================================================================
 // Compression Types
 // ============================================================================
 
 export interface CompressionStartRequest {
   model_path: string;
   output_path: string;
-  method: 'int8' | 'int4' | 'gptq' | 'pruning' | 'distillation';
+  method: 'int8' | 'int4' | 'gptq';
   options?: Record<string, any>;
 }
 
@@ -351,43 +298,24 @@ export interface TaskStatus {
 
 export interface JobHistoryItem {
   job_id: string;
-  type: 'training' | 'crawler' | 'compression' | 'deployment';
+  job_type: 'finetune' | 'compress' | 'deploy';
   status: string;
-  started_at: string;
+  created_at: string;
+  started_at?: string;
   completed_at?: string;
   params?: Record<string, any>;
+  progress?: Record<string, any> | null;
+  result?: Record<string, any> | null;
+  error?: string | null;
 }
 
 export interface JobStats {
-  total_jobs: number;
-  by_type: Record<string, number>;
-  by_status: Record<string, number>;
-  success_rate: number;
-}
-
-// ============================================================================
-// Deduplication Types
-// ============================================================================
-
-export interface DeduplicationRequest {
-  texts: string[];
-  method: 'hash' | 'semantic' | 'hybrid';
-  threshold?: number;
-  namespace?: string;
-  use_faiss?: boolean;
-}
-
-export interface DeduplicationResult {
-  unique_texts: string[];
-  duplicates_removed: number;
-  method_used: string;
-  processing_time_ms: number;
-}
-
-export interface DeduplicationStats {
-  total_hashes: number;
-  namespace_count: number;
-  memory_usage_mb: number;
+  total: number;
+  pending: number;
+  running: number;
+  completed: number;
+  failed: number;
+  stopped: number;
 }
 
 // ============================================================================

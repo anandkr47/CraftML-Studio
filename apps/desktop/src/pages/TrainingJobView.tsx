@@ -39,8 +39,6 @@ interface JobStatus {
     model_name?: string;
     dataset_path?: string;
     training_method?: string;
-    train_from_scratch?: boolean;
-    model_type?: string;
   };
 }
 
@@ -58,15 +56,6 @@ const TrainingJobView: React.FC = () => {
   // Helper to format model name for display
   const getModelDisplayName = (params: JobStatus['params']) => {
     if (!params) return 'N/A';
-    
-    if (params.train_from_scratch) {
-      const modelTypeMap: { [key: string]: string } = {
-        'scratch-gpt': 'GPT-like',
-        'scratch-bert': 'BERT-like',
-        'scratch-transformer': 'Transformer',
-      };
-      return modelTypeMap[params.model_type || ''] || params.model_type || 'From Scratch';
-    }
     
     return params.model_name?.split('/').pop() || 'N/A';
   };

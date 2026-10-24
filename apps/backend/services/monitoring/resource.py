@@ -3,11 +3,6 @@ Resource Monitoring
 System and GPU monitoring using core utilities
 """
 
-import sys
-from pathlib import Path
-
-# Add core to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 from core.ml.utils import (
     get_gpu_info,

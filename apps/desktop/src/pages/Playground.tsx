@@ -20,6 +20,7 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { HStack, VStack } from '../components/ui/Stack';
 import { useNotificationStore } from '../store/notificationStore';
+import { API_BASE } from '../config';
 
 // Add fadeIn animation styles
 const fadeInStyles = `
@@ -103,7 +104,7 @@ const Playground: React.FC = () => {
 
   const loadModels = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/playground/models');
+      const response = await fetch(`${API_BASE}/api/playground/models`);
       const data = await response.json();
       setModels(data.models || []);
     } catch (error) {
@@ -116,7 +117,7 @@ const Playground: React.FC = () => {
     try {
       showInfo('Loading model...');
       const response = await fetch(
-        `http://127.0.0.1:5000/api/playground/load/${model.model_id}`,
+        `${API_BASE}/api/playground/load/${model.model_id}`,
         { method: 'POST' }
       );
 
@@ -136,7 +137,7 @@ const Playground: React.FC = () => {
   const unloadModel = async (model: Model) => {
     try {
       const response = await fetch(
-        `http://127.0.0.1:5000/api/playground/unload/${model.model_id}`,
+        `${API_BASE}/api/playground/unload/${model.model_id}`,
         { method: 'POST' }
       );
 
@@ -180,7 +181,7 @@ const Playground: React.FC = () => {
     setMessages((prev) => [...prev, thinkingMessage]);
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/playground/generate', {
+      const response = await fetch(`${API_BASE}/api/playground/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

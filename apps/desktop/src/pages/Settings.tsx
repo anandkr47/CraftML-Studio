@@ -24,6 +24,7 @@ import { Badge } from '../components/ui/Badge';
 import { HStack, VStack } from '../components/ui/Stack';
 import { useNotificationStore } from '../store/notificationStore';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
+import { API_BASE } from '../config';
 
 interface HFTokenStatus {
   is_authenticated: boolean;
@@ -51,7 +52,7 @@ const Settings: React.FC = () => {
   const checkTokenStatus = async () => {
     setStatusLoading(true);
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/settings/hf-token/status');
+      const response = await fetch(`${API_BASE}/api/settings/hf-token/status`);
       if (response.ok) {
         const data = await response.json();
         setTokenStatus(data);
@@ -108,7 +109,7 @@ const Settings: React.FC = () => {
     setLoading(true);
     setVerifying(true);
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/settings/hf-token', {
+      const response = await fetch(`${API_BASE}/api/settings/hf-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: hfToken }),
@@ -135,7 +136,7 @@ const Settings: React.FC = () => {
   const handleRemoveToken = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/settings/hf-token', {
+      const response = await fetch(`${API_BASE}/api/settings/hf-token`, {
         method: 'DELETE',
       });
 

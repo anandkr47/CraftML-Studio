@@ -158,7 +158,7 @@ if ($useClang) {
     Write-Host "Clang not detected. Using MSVC toolchain. Install Visual Studio Clang to enable faster builds." -ForegroundColor Yellow
 }
 
-# Build EXE from project root so core/plugins/resources are accessible
+# Build EXE from project root so core/resources are accessible
 Write-Host "Running Nuitka..." -ForegroundColor Yellow
 $nuitkaArgs = $pythonArgsBase + @(
     '-m', 'nuitka',
@@ -181,9 +181,7 @@ $nuitkaArgs = $pythonArgsBase + @(
     '--include-package=services',
     '--include-package=db',
     '--include-package=models',
-    '--include-package=tasks',
     '--include-package=core',
-    '--include-package=plugins',
     
     # Include data directories (non-Python files like configs, templates, etc.)
     '--include-data-dir=resources=resources',

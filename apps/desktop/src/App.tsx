@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import EnhancedDashboard from "./pages/EnhancedDashboard";
 import HardwareDetection from "./pages/HardwareDetection";
 import DatasetManager from "./pages/DatasetManager";
-import CrawlerManager from "./pages/CrawlerManager";
 import EnhancedTrainingConsole from "./pages/EnhancedTrainingConsole";
 import TrainingJobView from "./pages/TrainingJobView";
 import CompressionPlayground from "./pages/CompressionPlayground";
@@ -18,6 +17,7 @@ import { ToastContainer } from "./components/ui/Toast";
 import UpdatePrompt from "./components/UpdatePrompt";
 import LoadingScreen from "./components/LoadingScreen";
 import { invoke } from "@tauri-apps/api/core";
+import { API_BASE } from './config';
 
 function App() {
   const [isBackendReady, setIsBackendReady] = useState(false);
@@ -60,7 +60,7 @@ function App() {
             try {
               const controller = new AbortController();
               const timeoutId = setTimeout(() => controller.abort(), 1000);
-              const response = await fetch("http://127.0.0.1:5000/api/health", {
+              const response = await fetch(`${API_BASE}/api/health`, {
                 method: "GET",
                 signal: controller.signal,
               });
@@ -123,7 +123,6 @@ function App() {
                 <Route path="/" element={<EnhancedDashboard />} />
                 <Route path="/hardware" element={<HardwareDetection />} />
                 <Route path="/datasets" element={<DatasetManager />} />
-                <Route path="/crawler" element={<CrawlerManager />} />
                 <Route path="/train" element={<EnhancedTrainingConsole />} />
                 <Route path="/train/job/:jobId" element={<TrainingJobView />} />
                 <Route path="/compress" element={<CompressionPlayground />} />

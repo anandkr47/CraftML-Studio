@@ -1,6 +1,6 @@
 /**
  * Job State Management using Zustand
- * Tracks training, crawling, compression, and deployment jobs
+ * Tracks training, compression, and deployment jobs
  */
 
 import { create } from 'zustand';
@@ -8,7 +8,7 @@ import { persist } from 'zustand/middleware';
 
 export interface Job {
   id: string;
-  type: 'training' | 'crawling' | 'compression' | 'deployment';
+  type: 'training' | 'compression' | 'deployment';
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress?: number;
   startTime: number;

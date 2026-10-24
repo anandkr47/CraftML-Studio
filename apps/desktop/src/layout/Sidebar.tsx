@@ -8,7 +8,6 @@ import { NavLink } from "react-router-dom";
 import {
   Home,
   Database,
-  Globe,
   PlayCircle,
   Minimize2,
   Send,
@@ -24,7 +23,6 @@ const navItems = [
   { name: "Dashboard", path: "/", icon: Home },
   { name: "Hardware", path: "/hardware", icon: CpuIcon },
   { name: "Datasets", path: "/datasets", icon: Database },
-  { name: "Crawler", path: "/crawler", icon: Globe },
   { name: "Training", path: "/train", icon: PlayCircle },
   { name: "Playground", path: "/playground", icon: MessageSquare },
   { name: "Compression", path: "/compress", icon: Minimize2 },
@@ -120,7 +118,7 @@ const Sidebar = () => {
             <p className="text-xs font-medium text-neutral-900 dark:text-neutral-100 whitespace-nowrap">
               Local Mode
             </p>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-nowrap">v1.0.0</p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-nowrap">v{__APP_VERSION__}</p>
           </div>
         </div>
       </div>

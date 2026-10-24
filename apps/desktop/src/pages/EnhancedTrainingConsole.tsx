@@ -32,13 +32,14 @@ import {
   fetchTrainingJobs,
 } from '../api/training';
 import { useNotificationStore } from '../store/notificationStore';
+import { API_BASE } from '../config';
 
 interface ModelOption {
   id: string;
   name: string;
   description: string;
   size?: string;
-  type: 'pretrained' | 'scratch';
+  type: 'pretrained';
   requiresHF: boolean;
 }
 
@@ -125,7 +126,7 @@ const EnhancedTrainingConsole: React.FC = () => {
 
   const handleStopJob = async (jobId: string) => {
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/train/stop/${jobId}`, {
+      const response = await fetch(`${API_BASE}/api/train/stop/${jobId}`, {
         method: 'POST',
       });
 
@@ -147,7 +148,7 @@ const EnhancedTrainingConsole: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/train/delete/${jobId}`, {
+      const response = await fetch(`${API_BASE}/api/train/delete/${jobId}`, {
         method: 'DELETE',
       });
 
@@ -177,11 +178,8 @@ const EnhancedTrainingConsole: React.FC = () => {
 
     setLoading(true);
     try {
-      const trainFromScratch = selectedModel.type === 'scratch';
-
       const payload: any = {
         dataset_path: selectedDataset.file_path || `resources/datasets/${selectedDataset.name}`,
-        train_from_scratch: trainFromScratch,
         training_method: trainingMethod, // Add selected training method
         training_config: {
           num_epochs: config.epochs,
@@ -194,23 +192,17 @@ const EnhancedTrainingConsole: React.FC = () => {
         },
       };
 
-      // Add model_name only for fine-tuning
-      if (!trainFromScratch) {
-        payload.model_name = selectedModel.id;
-        payload.lora_config = {
-          r: config.loraRank || 16,
-          lora_alpha: config.loraAlpha || 32,
-          lora_dropout: config.loraDropout || 0.1,
-        };
-      } else {
-        // Add model_type for training from scratch
-        payload.model_type = selectedModel.id;
-      }
+      payload.model_name = selectedModel.id;
+      payload.lora_config = {
+        r: config.loraRank || 16,
+        lora_alpha: config.loraAlpha || 32,
+        lora_dropout: config.loraDropout || 0.1,
+      };
 
       console.log('Training request payload:', payload);
 
       // Call backend API directly with correct payload
-      const response = await fetch('http://127.0.0.1:5000/api/train/start', {
+      const response = await fetch(`${API_BASE}/api/train/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -296,7 +288,7 @@ const EnhancedTrainingConsole: React.FC = () => {
       header: 'Model',
       render: (job) => (
         <span className="font-medium text-neutral-900 dark:text-neutral-100">
-          {job.base_model || 'From Scratch'}
+          {job.base_model || 'N/A'}
         </span>
       ),
     },
@@ -429,7 +421,7 @@ const EnhancedTrainingConsole: React.FC = () => {
                         {getStatusBadge(job.status)}
                       </div>
                       <div className="flex items-center gap-4 text-sm text-neutral-600 dark:text-neutral-400">
-                        <span>Model: {job.base_model || 'From Scratch'}</span>
+                        <span>Model: {job.base_model || 'N/A'}</span>
                         <span>•</span>
                         <span>
                           Epoch {job.current_epoch || 0}/{job.epochs || 0}

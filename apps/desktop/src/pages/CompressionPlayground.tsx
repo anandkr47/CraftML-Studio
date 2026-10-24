@@ -7,7 +7,6 @@ import React, { useState, useEffect } from 'react';
 import {
   Package,
   Zap,
-  Scissors,
   GitCompare,
   Loader2,
 } from 'lucide-react';
@@ -144,10 +143,6 @@ const CompressionPlayground: React.FC = () => {
     switch (type) {
       case 'quantize':
         return <Zap className="w-4 h-4 text-brand-500" />;
-      case 'prune':
-        return <Scissors className="w-4 h-4 text-warning-500" />;
-      case 'distill':
-        return <Package className="w-4 h-4 text-success-500" />;
       default:
         return <Package className="w-4 h-4 text-neutral-500" />;
     }
@@ -157,8 +152,6 @@ const CompressionPlayground: React.FC = () => {
   const totalJobs = jobs.length;
   const completedJobs = jobs.filter(j => j.status === 'completed').length;
   const quantizeJobs = jobs.filter(j => j.type === 'quantize').length;
-  const pruneJobs = jobs.filter(j => j.type === 'prune').length;
-  const distillJobs = jobs.filter(j => j.type === 'distill').length;
 
   // Table columns
   const columns: Column<CompressionJob>[] = [
@@ -225,12 +218,12 @@ const CompressionPlayground: React.FC = () => {
           Compression Playground
         </h1>
         <p className="text-neutral-600 dark:text-neutral-400 mt-1">
-          Optimize models with quantization, pruning, and distillation
+          Optimize models with quantization
         </p>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardContent className="pt-6">
             <HStack justify="between" align="start">
@@ -267,41 +260,6 @@ const CompressionPlayground: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-6">
-            <HStack justify="between" align="start">
-              <VStack spacing={1}>
-                <p className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
-                  Prune
-                </p>
-                <p className="text-3xl font-bold text-neutral-900 dark:text-neutral-100">
-                  {pruneJobs}
-                </p>
-              </VStack>
-              <div className="p-3 bg-warning-50 dark:bg-warning-900/20 rounded-lg">
-                <Scissors className="w-6 h-6 text-warning-600 dark:text-warning-400" />
-              </div>
-            </HStack>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <HStack justify="between" align="start">
-              <VStack spacing={1}>
-                <p className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
-                  Distill
-                </p>
-                <p className="text-3xl font-bold text-neutral-900 dark:text-neutral-100">
-                  {distillJobs}
-                </p>
-              </VStack>
-              <div className="p-3 bg-success-50 dark:bg-success-900/20 rounded-lg">
-                <Package className="w-6 h-6 text-success-600 dark:text-success-400" />
-              </div>
-            </HStack>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Compression Methods */}
@@ -311,7 +269,7 @@ const CompressionPlayground: React.FC = () => {
           <CardDescription>Select a compression technique to optimize your model</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <Button
               variant="outline"
               onClick={() => handleStart('quantize')}
@@ -322,32 +280,6 @@ const CompressionPlayground: React.FC = () => {
               <span className="text-lg font-semibold">Quantize</span>
               <span className="text-xs text-neutral-600 dark:text-neutral-400">
                 Reduce precision for faster inference
-              </span>
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={() => handleStart('prune')}
-              disabled={loading}
-              leftIcon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
-              className="h-24 flex-col gap-2"
-            >
-              <span className="text-lg font-semibold">Prune</span>
-              <span className="text-xs text-neutral-600 dark:text-neutral-400">
-                Remove redundant parameters
-              </span>
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={() => handleStart('distill')}
-              disabled={loading}
-              leftIcon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
-              className="h-24 flex-col gap-2"
-            >
-              <span className="text-lg font-semibold">Distill</span>
-              <span className="text-xs text-neutral-600 dark:text-neutral-400">
-                Transfer knowledge to smaller model
               </span>
             </Button>
           </div>

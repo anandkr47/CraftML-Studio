@@ -161,7 +161,7 @@ export const TrainingComparison: React.FC<TrainingComparisonProps> = ({
                 onChange={(val) => setJobAId(val)}
                 options={completedJobs.map((job) => ({
                   value: job.job_id,
-                  label: `${job.job_id.substring(0, 12)}... - ${job.base_model || 'From Scratch'}`,
+                  label: `${job.job_id.substring(0, 12)}... - ${job.base_model || 'N/A'}`,
                 }))}
               />
             </div>
@@ -174,7 +174,7 @@ export const TrainingComparison: React.FC<TrainingComparisonProps> = ({
                 onChange={(val) => setJobBId(val)}
                 options={completedJobs.map((job) => ({
                   value: job.job_id,
-                  label: `${job.job_id.substring(0, 12)}... - ${job.base_model || 'From Scratch'}`,
+                  label: `${job.job_id.substring(0, 12)}... - ${job.base_model || 'N/A'}`,
                 }))}
               />
             </div>
@@ -202,8 +202,8 @@ export const TrainingComparison: React.FC<TrainingComparisonProps> = ({
                   />
                   <MetricRow
                     label="Model"
-                    valueA={jobA.base_model || 'From Scratch'}
-                    valueB={jobB.base_model || 'From Scratch'}
+                    valueA={jobA.base_model || 'N/A'}
+                    valueB={jobB.base_model || 'N/A'}
                   />
                   <MetricRow
                     label="Started"
