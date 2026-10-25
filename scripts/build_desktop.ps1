@@ -56,7 +56,8 @@ Write-Host "Installing backend dependencies (locked versions)..." -ForegroundCol
 & $venvPython -m pip install --upgrade pip | Out-Null
 # PyPI's Windows torch wheels are CPU-only; on a machine with an NVIDIA driver, bundle the CUDA build
 # of the locked torch version (it still runs on machines without a GPU).
-if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+# CRAFTML_TORCH=cpu forces the CPU-only build (smaller installer); the CUDA build is about 3 GB.
+if ($env:CRAFTML_TORCH -ne "cpu" -and (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
     $lockFile = Join-Path $backendDir "requirements.lock.txt"
     $torchPin = (Select-String -Path $lockFile -Pattern '^torch==(.+)$').Matches[0].Groups[1].Value
     & $venvPython -m pip install "torch==$torchPin" --index-url https://download.pytorch.org/whl/cu126

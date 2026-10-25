@@ -26,6 +26,8 @@ jobs:
       # Tauri v2 names; the repository secrets keep their original names.
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+      # CPU-only PyTorch: with CUDA the Linux installers are ~3 GiB, over GitHub's 2 GiB release-asset limit.
+      CRAFTML_TORCH: cpu
 
     steps:
       - name: Checkout
@@ -75,6 +77,18 @@ jobs:
         shell: pwsh
         run: |
           if ($env:TAURI_SIGNING_PRIVATE_KEY) { .\scripts\build_desktop.ps1 -Updater } else { .\scripts\build_desktop.ps1 }
+
+      - name: Check installer sizes (GitHub release assets must be under 2 GiB)
+        shell: bash
+        run: |
+          limit=2147483648
+          bad=0
+          while IFS= read -r -d '' f; do
+            size=$(wc -c < "$f")
+            echo "$(( size / 1048576 )) MB  $f"
+            if [ "$size" -ge "$limit" ]; then echo "::error::$f is $(( size / 1048576 )) MB, over the 2 GiB release-asset limit"; bad=1; fi
+          done < <(find apps/desktop/src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.tar.gz' \) -print0)
+          exit $bad
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
