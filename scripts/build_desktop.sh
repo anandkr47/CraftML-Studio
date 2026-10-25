@@ -47,6 +47,15 @@ fi
 
 echo "📦 Installing backend dependencies (locked versions)..."
 "$VENV_PYTHON" -m pip install --upgrade pip >/dev/null
+
+# PyTorch variant. CRAFTML_TORCH=cpu bundles the CPU-only build: on Linux, PyPI's torch drags in about
+# 3 GB of CUDA libraries, which makes installers too big for a GitHub release (2 GiB per file limit).
+# Unset: whatever pip picks for this platform (CUDA on Linux, Metal-capable on macOS).
+if [ "${CRAFTML_TORCH:-}" = "cpu" ] && [ "$(uname -s)" != "Darwin" ]; then
+  TORCH_PIN="$(sed -n 's/^torch==\(.*\)$/\1/p' "$BACKEND_DIR/requirements.lock.txt")"
+  echo "📦 Installing CPU-only PyTorch $TORCH_PIN..."
+  "$VENV_PYTHON" -m pip install "torch==$TORCH_PIN" --index-url https://download.pytorch.org/whl/cpu
+fi
 "$VENV_PYTHON" -m pip install -r "$BACKEND_DIR/requirements.txt" -r "$BACKEND_DIR/requirements-build.txt" \
   -c "$BACKEND_DIR/requirements.lock.txt"
 

@@ -134,9 +134,12 @@ The build script:
    330 MB) and runs `tauri build`. It is an archive because Tauri's resource copy follows symlinks,
    which the PyInstaller build needs on macOS.
 
-Installers end up in `apps/desktop/src-tauri/target/release/bundle/`. Build on each target OS (no
-cross-compiling). On Windows, a build machine with an NVIDIA driver bundles CUDA PyTorch, which
-also runs on machines without a GPU.
+Installers end up in `apps/desktop/src-tauri/target/release/bundle/`. Set `CRAFTML_TORCH=cpu` to bundle the CPU-only PyTorch build (the release workflow
+does): on Linux, PyPI's PyTorch includes about 3 GB of CUDA libraries, which would push each installer
+past GitHub's 2 GiB limit for release files. Installers built that way run models on the CPU (Apple
+Silicon builds still use Metal); NVIDIA GPU use needs a source install or a locally built CUDA bundle. Build on each target OS (no
+cross-compiling). On Windows, a build machine with an NVIDIA driver bundles CUDA PyTorch (unless
+`CRAFTML_TORCH=cpu`), which also runs on machines without a GPU.
 
 At first launch (and after each update) the app unpacks the bundled backend into the per-user
 directory above and runs it from there. That first start can take a few minutes while the OS
