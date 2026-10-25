@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Cloud layer + backend services that don't need an ML framework, on all three desktop OSes.
+  backend-tests:
+    name: Backend tests (${{ matrix.os }}, py${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]   # macos-14 = Apple Silicon
+        python: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install test dependencies (no torch)
+        run: >
+          python -m pip install --upgrade pip &&
+          python -m pip install pytest fastapi "pydantic>=2" sqlalchemy cryptography keyring
+          paramiko httpx huggingface_hub psutil python-multipart numpy
+      - name: Run tests
+        shell: bash
+        run: >
+          python -m pytest -v tests/test_cloud_*.py --ignore=tests/test_cloud_ssh_integration.py
+          tests/test_runtime_helpers.py tests/test_modelhub.py tests/test_jobs.py tests/test_chat_api.py
+          tests/test_rag.py tests/test_monitor.py
+
+  # Real sshd + real paramiko: the SSH provider end to end (Linux only).
+  ssh-integration:
+    name: SSH provider against a real sshd
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: >
+          python -m pip install pytest fastapi "pydantic>=2" sqlalchemy cryptography keyring
+          paramiko httpx huggingface_hub psutil python-multipart numpy
+      - name: Start an SSH server with a throwaway key and a stub nvidia-smi
+        run: |
+          sudo apt-get update && sudo apt-get install -y openssh-server
+          ssh-keygen -t ed25519 -N "" -f "$RUNNER_TEMP/ci_key"
+          mkdir -p ~/.ssh && cat "$RUNNER_TEMP/ci_key.pub" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
+          printf '#!/bin/sh\necho "NVIDIA CI Stub GPU, 24576"\n' | sudo tee /usr/local/bin/nvidia-smi >/dev/null
+          sudo chmod +x /usr/local/bin/nvidia-smi
+          sudo service ssh start
+      - name: Run SSH integration tests
+        env:
+          CRAFTML_TEST_SSH_HOST: 127.0.0.1
+          CRAFTML_TEST_SSH_PORT: "22"
+          CRAFTML_TEST_SSH_USER: runner
+          CRAFTML_TEST_SSH_KEY: ${{ runner.temp }}/ci_key
+        run: python -m pytest tests/test_cloud_ssh_integration.py -v
+
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+        working-directory: apps/desktop
+      - run: npx tsc --noEmit
+        working-directory: apps/desktop
+      - run: npm run build
+        working-directory: apps/desktop
+
+  # Shell and PowerShell scripts: shellcheck on Linux, the PowerShell parser on Windows.
+  scripts:
+    name: Script lint (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck -S warning scripts/*.sh core/cloud/worker/bootstrap.sh
+      - name: PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($f in Get-ChildItem scripts -Filter *.ps1) {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors) { $failed = $true; $errors | ForEach-Object { Write-Host "$($f.Name): $($_.Extent.StartLineNumber): $($_.Message)" } }
+          }
+          # Windows PowerShell 5.1 reads BOM-less scripts as ANSI; keep them ASCII so they parse everywhere.
+          foreach ($f in Get-ChildItem scripts -Filter *.ps1) {
+            if ([System.IO.File]::ReadAllBytes($f.FullName) | Where-Object { $_ -gt 127 }) { $failed = $true; Write-Host "$($f.Name): non-ASCII characters" }
+          }
+          if ($failed) { exit 1 }
+
+  # Tauri shell: backend launcher unit tests on every desktop OS.
+  desktop-shell:
+    name: Desktop shell (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Linux system libraries for Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - run: cargo test --locked
+        working-directory: apps/desktop/src-tauri

@@ -3,7 +3,6 @@ Test Suite for Core ML Modules
 Tests training, compression, deployment, and utilities
 """
 
-import pytest
 import sys
 from pathlib import Path
 
@@ -54,7 +53,6 @@ class TestMetrics:
     
     def test_model_size_calculation(self):
         """Test model size calculation"""
-        import torch
         import torch.nn as nn
         
         # Create simple model

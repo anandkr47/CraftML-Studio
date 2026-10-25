@@ -18,7 +18,7 @@ from sqlalchemy import func
 
 from core.config import settings
 from core.utils import setup_logger
-from db.models import Job, JobLog, JobMetric, SessionLocal
+from db.models import Job, JobLog, JobMetric, SessionLocal, iso_utc, local_time, utcnow
 
 logger = setup_logger("jobs", log_file=str(settings.logs_dir / "jobs.log"))
 
@@ -43,7 +43,7 @@ def _loads(value: Optional[str]) -> Any:
 
 
 def _iso(value: Optional[datetime]) -> Optional[str]:
-    return value.isoformat() if value else None
+    return iso_utc(value)
 
 
 def _to_dict(job: Job) -> Dict[str, Any]:
@@ -68,7 +68,7 @@ def create(job_type: str, params: Dict[str, Any], status: str = "pending") -> st
 
     prefix = {"finetune": "train", "compress": "compress", "deploy": "deploy"}[job_type]
     job_id = f"{prefix}_{uuid.uuid4().hex[:8]}"
-    now = datetime.utcnow()
+    now = utcnow()
 
     with SessionLocal() as session:
         session.add(
@@ -101,7 +101,7 @@ def update(
         if not job:
             return False
 
-        now = datetime.utcnow()
+        now = utcnow()
         if status:
             job.status = status
             if status == "running" and not job.started_at:
@@ -207,7 +207,7 @@ def get_logs(job_id: str, limit: int = 1000, offset: int = 0) -> Dict[str, Any]:
             .limit(limit)
             .all()
         )
-        lines = [f"[{row.created_at:%Y-%m-%d %H:%M:%S}] {row.message}" for row in rows]
+        lines = [f"[{local_time(row.created_at):%Y-%m-%d %H:%M:%S}] {row.message}" for row in rows]
     return {"job_id": job_id, "logs": lines, "total": total}
 
 
@@ -271,7 +271,7 @@ def fail_interrupted_jobs() -> int:
     """Mark jobs left pending/running by a previous process as failed."""
     with SessionLocal() as session:
         stale = session.query(Job).filter(Job.status.in_(("pending", "running"))).all()
-        now = datetime.utcnow()
+        now = utcnow()
         for job in stale:
             job.status = "failed"
             job.error = "Interrupted by application restart"

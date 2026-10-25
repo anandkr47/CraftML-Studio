@@ -3,6 +3,7 @@
  */
 
 import { API_BASE } from '../config';
+import { jsonOrThrow } from './errors';
 
 export interface LocalDeploymentRequest {
   model_id?: string | null;
@@ -53,11 +54,7 @@ export interface ServerStatus {
 }
 
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(typeof body.detail === 'string' ? body.detail : res.statusText);
-  }
-  return res.json();
+  return jsonOrThrow<T>(res);
 }
 
 const post = <T>(path: string, body?: unknown) =>

@@ -3,6 +3,7 @@
  */
 
 import { API_BASE } from '../config';
+import { jsonOrThrow } from './errors';
 
 export type CompressionMethod = 'gguf' | 'int4' | 'int8' | 'gptq' | 'awq';
 
@@ -73,11 +74,7 @@ export interface ToolingStatus {
 }
 
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(typeof body.detail === 'string' ? body.detail : res.statusText);
-  }
-  return res.json();
+  return jsonOrThrow<T>(res);
 }
 
 export const compressApi = {

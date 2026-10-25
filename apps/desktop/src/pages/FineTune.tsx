@@ -20,6 +20,9 @@ import {
   finetuneApi,
 } from '../api/finetune';
 import { useNotificationStore } from '../store/notificationStore';
+import { LOCAL_PLACEMENT, RunPlacement, WhereToRun } from '../components/cloud/WhereToRun';
+import { money } from '../api/cloud';
+import { errorText } from '../api/errors';
 
 const STEPS = ['Base model', 'Dataset', 'Settings', 'Review'] as const;
 
@@ -101,6 +104,7 @@ const Wizard: React.FC = () => {
   const [loraDropout, setLoraDropout] = useState(0.05);
   const [saveSteps, setSaveSteps] = useState(100);
 
+  const [placement, setPlacement] = useState<RunPlacement>(LOCAL_PLACEMENT);
   const [starting, setStarting] = useState(false);
   const [recent, setRecent] = useState<JobSummary[]>([]);
 
@@ -151,7 +155,7 @@ const Wizard: React.FC = () => {
       setDataset(info);
       await refreshDatasets();
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     } finally {
       setUploading(false);
     }
@@ -161,21 +165,37 @@ const Wizard: React.FC = () => {
     try {
       setDataset(await finetuneApi.datasetInfo(d.id));
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     }
   };
 
   const removeDataset = async (d: DatasetInfo) => {
-    await finetuneApi.deleteDataset(d.id).catch((e) => showError(e.message));
+    await finetuneApi.deleteDataset(d.id).catch((e) => showError(errorText(e)));
     if (dataset?.id === d.id) setDataset(null);
     refreshDatasets();
   };
 
+  // Mirrors the backend's limits (models/requests.py) so the user gets a clear message, not a 422.
+  const settingsError = (() => {
+    const whole = (n: number, lo: number, hi: number) => Number.isInteger(n) && n >= lo && n <= hi;
+    if (!whole(epochs, 1, 100)) return 'Epochs must be a whole number from 1 to 100.';
+    if (!(learningRate > 0 && learningRate <= 0.01)) return 'Learning rate must be greater than 0 and at most 0.01.';
+    if (!whole(batchSize, 1, 128)) return 'Batch size must be a whole number from 1 to 128.';
+    if (!whole(maxSeqLength, 64, 8192)) return 'Max tokens per example must be a whole number from 64 to 8192.';
+    if (!whole(saveSteps, 1, 1_000_000)) return 'Checkpoint interval must be a whole number of at least 1.';
+    if (method.method !== 'full') {
+      if (!whole(loraRank, 1, 256)) return 'LoRA rank must be a whole number from 1 to 256.';
+      if (!whole(loraAlpha, 1, 512)) return 'LoRA alpha must be a whole number from 1 to 512.';
+      if (!(loraDropout >= 0 && loraDropout <= 0.5)) return 'LoRA dropout must be between 0 and 0.5.';
+    }
+    return null;
+  })();
+
   const canAdvance = [
     modelId.trim().length > 0,
     !!dataset && dataset.valid !== false,
-    epochs >= 1 && learningRate > 0 && batchSize >= 1,
-    true,
+    !settingsError && placement.valid,
+    !settingsError && placement.valid,
   ][step];
 
   const start = async () => {
@@ -187,6 +207,7 @@ const Wizard: React.FC = () => {
         dataset_path: dataset.path,
         training_method: method.method,
         lora_config: { r: loraRank, lora_alpha: loraAlpha, lora_dropout: loraDropout },
+        ...(placement.target ? { cloud: placement.target } : {}),
         training_config: {
           num_epochs: epochs,
           batch_size: batchSize,
@@ -201,7 +222,7 @@ const Wizard: React.FC = () => {
       showSuccess('Fine-tuning started');
       navigate(`/finetune/job/${job_id}`);
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     } finally {
       setStarting(false);
     }
@@ -399,6 +420,8 @@ const Wizard: React.FC = () => {
           {/* STEP 3 — settings */}
           {step === 2 && (
             <>
+              <WhereToRun onChange={setPlacement} />
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {METHODS.map((m) => (
                   <button
@@ -459,6 +482,8 @@ const Wizard: React.FC = () => {
           {step === 3 && (
             <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
               {[
+                ['Runs on', placement.label],
+                ...(placement.estimate?.worst_case_cost != null ? [['Worst-case cost', money(placement.estimate.worst_case_cost)]] : []),
                 ['Base model', modelId],
                 ['Dataset', `${dataset?.name} (${dataset?.num_samples?.toLocaleString()} examples)`],
                 ['Method', method.title],
@@ -477,6 +502,8 @@ const Wizard: React.FC = () => {
             </dl>
           )}
 
+          {step === 2 && settingsError && <p className="text-sm text-error-600">{settingsError}</p>}
+
           <div className="flex justify-between pt-2">
             <Button variant="outline" disabled={step === 0} onClick={() => setStep(step - 1)}>
               Back
@@ -486,7 +513,7 @@ const Wizard: React.FC = () => {
                 Next
               </Button>
             ) : (
-              <Button onClick={start} isLoading={starting}>
+              <Button onClick={start} isLoading={starting} disabled={!canAdvance}>
                 Start fine-tuning
               </Button>
             )}

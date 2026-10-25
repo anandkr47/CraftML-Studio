@@ -3,12 +3,14 @@ Efficient Training Service
 Optimized for fast training with minimal GPU/CPU consumption
 """
 
-import torch
+import math
+import os
 import threading
+
+import torch
 import logging
 from pathlib import Path
 from typing import Dict, Any, Callable, Optional
-from datetime import datetime
 
 from transformers import (
     AutoModelForCausalLM,
@@ -21,10 +23,23 @@ from peft import (
     get_peft_model,
     prepare_model_for_kbit_training,
 )
-import bitsandbytes as bnb
 
 logger = logging.getLogger(__name__)
 
+
+
+def _cached_first(load, name_or_path, **kwargs):
+    """
+    ``load(name_or_path, **kwargs)`` from the local Hugging Face cache when the model is already
+    downloaded, so training works offline (and doesn't stall on flaky networks). Kept local to
+    this module because it also runs on remote GPU workers (see core/utils/hub.py).
+    """
+    if os.path.exists(name_or_path):
+        return load(name_or_path, **kwargs)
+    try:
+        return load(name_or_path, local_files_only=True, **kwargs)
+    except (OSError, ValueError):
+        return load(name_or_path, **kwargs)
 
 class EfficientTrainer:
     """
@@ -108,17 +123,23 @@ class EfficientTrainer:
         if training_config is None:
             training_config = {}
         
+        def opt(key: str, default: Any) -> Any:
+            """Explicit None (an omitted optional field) means "use the default"."""
+            value = training_config.get(key)
+            return default if value is None else value
+
         self.training_config = {
-            'num_epochs': training_config.get('num_epochs', default_epochs),
-            'batch_size': training_config.get('batch_size', default_batch),
-            'learning_rate': training_config.get('learning_rate', default_lr),
-            'warmup_steps': training_config.get('warmup_steps', 50),  # Reduced for speed
-            'gradient_accumulation_steps': training_config.get('gradient_accumulation_steps', 2),  # Reduced for speed
-            'max_grad_norm': training_config.get('max_grad_norm', 0.3),
-            'weight_decay': training_config.get('weight_decay', 0.01),
-            'save_steps': training_config.get('save_steps', 100),
-            'logging_steps': training_config.get('logging_steps', 5),
-            'max_seq_length': training_config.get('max_seq_length', 512),
+            'num_epochs': opt('num_epochs', default_epochs),
+            'batch_size': opt('batch_size', default_batch),
+            'learning_rate': opt('learning_rate', default_lr),
+            # None -> warm up over 3% of the run (a fixed step count can exceed a small run entirely)
+            'warmup_steps': training_config.get('warmup_steps'),
+            'gradient_accumulation_steps': opt('gradient_accumulation_steps', 1),
+            'max_grad_norm': opt('max_grad_norm', 0.3),
+            'weight_decay': opt('weight_decay', 0.01),
+            'save_steps': opt('save_steps', 100),
+            'logging_steps': opt('logging_steps', 5),
+            'max_seq_length': opt('max_seq_length', 512),
         }
         want_8bit = bool(training_config.get('use_8bit'))
         
@@ -194,16 +215,10 @@ class EfficientTrainer:
         self._log(f"Training method: {self.training_method.upper()}")
         self._log(f"Device: {self.device}")
         
-        # Check if model needs to be downloaded
-        try:
-            from huggingface_hub import model_info
-            self._log(f"📥 Checking model availability: {self.model_name}")
-        except:
-            pass
-        
         # Load tokenizer
         self._log("📥 Loading tokenizer...")
-        tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer = _cached_first(
+            AutoTokenizer.from_pretrained,
             self.model_name,
             trust_remote_code=True,
             use_fast=True,
@@ -230,12 +245,13 @@ class EfficientTrainer:
                 bnb_4bit_use_double_quant=True,  # Nested quantization
             )
             
-            model = AutoModelForCausalLM.from_pretrained(
+            model = _cached_first(
+                AutoModelForCausalLM.from_pretrained,
                 self.model_name,
                 quantization_config=bnb_config,
                 device_map="auto",
                 trust_remote_code=True,
-                torch_dtype=torch.float16,
+                dtype=torch.float16,
             )
             
             # Prepare model for k-bit training
@@ -246,12 +262,13 @@ class EfficientTrainer:
             from transformers import BitsAndBytesConfig
 
             self._log("📥 Downloading/loading model weights in 8-bit (this may take a few minutes)...")
-            model = AutoModelForCausalLM.from_pretrained(
+            model = _cached_first(
+                AutoModelForCausalLM.from_pretrained,
                 self.model_name,
                 quantization_config=BitsAndBytesConfig(load_in_8bit=True),
                 device_map="auto",
                 trust_remote_code=True,
-                torch_dtype=torch.float16,
+                dtype=torch.float16,
             )
             model = prepare_model_for_kbit_training(model)
             self._log("✓ Model loaded with 8-bit quantization")
@@ -261,11 +278,12 @@ class EfficientTrainer:
             self._log("📥 Downloading/loading model weights (this may take a few minutes)...")
             self._log("💡 Tip: Large models will be cached locally for future use")
             
-            model = AutoModelForCausalLM.from_pretrained(
+            model = _cached_first(
+                AutoModelForCausalLM.from_pretrained,
                 self.model_name,
                 device_map="auto",
                 trust_remote_code=True,
-                torch_dtype=torch.float16 if self.device == "cuda" else (
+                dtype=torch.float16 if self.device == "cuda" else (
                     torch.bfloat16 if self.device == "mps" else torch.float32
                 ),
             )
@@ -276,11 +294,12 @@ class EfficientTrainer:
             self._log("📥 Downloading/loading model weights (this may take a few minutes)...")
             self._log("💡 Tip: Large models will be cached locally for future use")
             
-            model = AutoModelForCausalLM.from_pretrained(
+            model = _cached_first(
+                AutoModelForCausalLM.from_pretrained,
                 self.model_name,
                 device_map="auto",
                 trust_remote_code=True,
-                torch_dtype=torch.float16 if self.device == "cuda" else (
+                dtype=torch.float16 if self.device == "cuda" else (
                     torch.bfloat16 if self.device == "mps" else torch.float32
                 ),
             )
@@ -349,6 +368,8 @@ class EfficientTrainer:
                     else:
                         target_modules = ["q_proj", "v_proj"]  # Generic fallback
             
+            # GPT-2 style models use Conv1D layers, whose weights are stored transposed.
+            model_type = getattr(model.config, 'model_type', '') or ''
             lora_config = LoraConfig(
                 r=self.lora_config['r'],
                 lora_alpha=self.lora_config['lora_alpha'],
@@ -356,6 +377,7 @@ class EfficientTrainer:
                 target_modules=target_modules,
                 bias="none",
                 task_type="CAUSAL_LM",
+                fan_in_fan_out=model_type in ("gpt2", "gpt_bigcode"),
             )
             
             model = get_peft_model(model, lora_config)
@@ -413,13 +435,24 @@ class EfficientTrainer:
                 }
             
             # Training arguments (optimized for efficiency and speed)
+            # Warmup as a step count computed here: works on every transformers version
+            # (transformers 5 removed `warmup_ratio`) and never exceeds a small run.
+            steps_per_epoch = max(1, math.ceil(
+                len(train_dataset) / (self.training_config['batch_size'] * self.training_config['gradient_accumulation_steps'])
+            ))
+            total_steps = steps_per_epoch * self.training_config['num_epochs']
+            warmup_steps = self.training_config['warmup_steps']
+            if warmup_steps is None:
+                warmup_steps = int(total_steps * 0.03)
+            warmup_steps = min(int(warmup_steps), max(0, total_steps - 1))
+
             training_args = TrainingArguments(
                 output_dir=str(self.output_dir),
                 num_train_epochs=self.training_config['num_epochs'],
                 per_device_train_batch_size=self.training_config['batch_size'],
                 gradient_accumulation_steps=self.training_config['gradient_accumulation_steps'],
                 learning_rate=self.training_config['learning_rate'],
-                warmup_steps=self.training_config['warmup_steps'],
+                warmup_steps=warmup_steps,
                 max_grad_norm=self.training_config['max_grad_norm'],
                 weight_decay=self.training_config['weight_decay'],
                 
@@ -437,6 +470,7 @@ class EfficientTrainer:
                 
                 # Speed optimizations
                 remove_unused_columns=True,
+                dataloader_pin_memory=self.device == "cuda",  # pinned memory only helps (and works) on CUDA
                 report_to="none",  # Disable wandb/tensorboard for speed
                 dataloader_num_workers=0,  # Reduce CPU usage
                 disable_tqdm=False,  # Keep progress bar

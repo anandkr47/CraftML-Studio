@@ -3,6 +3,7 @@ CraftML Studio Backend API
 FastAPI server for ML operations
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -11,17 +12,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 # Lazy import heavy modules to speed up startup
 # Import only what's needed for basic API structure
 from api import train, compress, deploy, monitor, dataset, modelhub, websocket
-from api import jobs, settings, chat, kb
+from api import jobs, settings, chat, kb, cloud
 from api.openai_compat import create_router as create_openai_router
+from api.errors import register_cloud_error_handler
+from api.security import LocalOnlyGuard, allowed_origins
 from db.models import init_db
 from services import jobs as job_store
 from core.utils import setup_logger
 from core.config import settings as app_settings
-from models.responses import ErrorResponse
 
 # Setup logging
 logger = setup_logger("craftml_backend", log_file=str(app_settings.logs_dir / "backend.log"))
@@ -41,48 +46,72 @@ try:
 except Exception as e:
     logger.warning(f"Database initialization note: {e}")
 
-# CORS middleware - allow Tauri frontend
+# Migrate the legacy HF token and terminate remote GPU runs the previous process left billing
+from services import cloud_service  # noqa: E402
+
+cloud_service.startup()
+cloud_service.configure_inference()
+
+# CORS: only the desktop app (and the dev server) may call the API from a browser context.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:1420",  # Tauri dev
-        "http://127.0.0.1:1420",
-        "tauri://localhost",      # Tauri production
-        "*"  # Allow all for development
-    ],
-    allow_credentials=True,
+    allow_origins=allowed_origins(),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Added last so it runs first: rejects non-loopback Hosts and foreign Origins (HTTP and WebSocket).
+app.add_middleware(LocalOnlyGuard)
 
 
-# Global exception handler
+register_cloud_error_handler(app)
+
+
+# Error responses share one shape: {"status": "error", "message": <human text>, "detail": <same / FastAPI detail>, "code"}.
+# The frontend reads `message`; `detail` stays for API clients that expect FastAPI's convention.
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
-    """Handle HTTP exceptions with consistent error format"""
     logger.error(f"HTTP {exc.status_code}: {exc.detail}")
+    message = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "status": "error",
-            "message": exc.detail,
-            "code": f"HTTP_{exc.status_code}"
-        }
+        content={"status": "error", "message": message, "detail": exc.detail, "code": f"HTTP_{exc.status_code}"},
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def starlette_http_exception_handler(request, exc):
+    """Unknown routes / wrong methods (raised by the router, not by our handlers)."""
+    message = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"status": "error", "message": message, "detail": exc.detail, "code": f"HTTP_{exc.status_code}"},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    """422 with FastAPI's `detail` list plus a readable `message` that names each field."""
+    problems = []
+    for err in exc.errors():
+        loc = [str(part) for part in err.get("loc", ()) if part not in ("body", "query", "path")]
+        problems.append(f"{'.'.join(loc) or 'request'}: {err.get('msg', 'invalid value')}")
+    return JSONResponse(
+        status_code=422,
+        content={"status": "error", "message": "; ".join(problems) or "Invalid request",
+                 "detail": jsonable_encoder(exc.errors()), "code": "VALIDATION_ERROR"},
     )
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
-    """Handle unexpected exceptions"""
+    """Unexpected exceptions: logged with a traceback; the client gets a generic message."""
     logger.error(f"Unexpected error: {str(exc)}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={
-            "status": "error",
-            "message": "Internal server error",
-            "code": "INTERNAL_ERROR",
-            "details": str(exc) if app.debug else None
-        }
+        content={"status": "error", "message": "Internal server error", "detail": "Internal server error",
+                 "code": "INTERNAL_ERROR"},
     )
 
 
@@ -98,6 +127,7 @@ app.include_router(jobs.router, prefix="/api/jobs", tags=["Job History"])
 app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(kb.router, prefix="/api/kb", tags=["Knowledge Base"])
+app.include_router(cloud.router, prefix="/api/cloud", tags=["Cloud GPUs"])
 app.include_router(create_openai_router(), prefix="/v1", tags=["OpenAI Compatible"])
 
 
@@ -119,6 +149,7 @@ async def root():
             "settings": "/api/settings",
             "chat": "/api/chat",
             "kb": "/api/kb",
+            "cloud": "/api/cloud",
             "openai": "/v1"
         }
     }
@@ -129,7 +160,9 @@ async def health():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "service": "craftml-backend"
+        "service": "craftml-backend",
+        # set by the desktop shell; lets it detect a stale backend left by an older app version
+        "app_version": os.environ.get("CRAFTML_APP_VERSION"),
     }
 
 
@@ -139,6 +172,6 @@ if __name__ == "__main__":
     uvicorn.run(
         app,
         host="127.0.0.1",
-        port=5000,
+        port=int(os.environ.get("CRAFTML_PORT", "17860")),
         log_level="info"
     )

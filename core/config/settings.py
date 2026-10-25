@@ -13,7 +13,7 @@ ENV_VAR_USER_DATA = "CRAFTML_USER_DATA_DIR"
 
 def _project_root() -> Path:
     """Return repository root even when frozen."""
-    # When running from a Nuitka/pyinstaller bundle, sys._MEIPASS points to the temp dir.
+    # In a PyInstaller bundle, sys._MEIPASS is the bundle's data directory (_internal).
     bundle_root = getattr(sys, "_MEIPASS", None)
     if bundle_root:
         return Path(bundle_root)

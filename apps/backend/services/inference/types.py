@@ -1,7 +1,7 @@
 """Shared types for the inference engine."""
 
 from dataclasses import dataclass, field
-from typing import Dict, Iterator, List, Optional, Protocol
+from typing import Dict, Iterator, List, Protocol
 
 Message = Dict[str, str]  # {"role": "system|user|assistant", "content": "..."}
 
@@ -30,7 +30,7 @@ class ModelInfo:
     id: str
     name: str
     path: str
-    kind: str  # "full" | "lora" | "gguf" | "hf"
+    kind: str  # "full" | "lora" | "gguf" | "hf" | "remote"
     size_mb: float = 0.0
 
 
@@ -48,3 +48,51 @@ class Backend(Protocol):
 
 class InferenceError(RuntimeError):
     """Raised for user-visible inference failures (missing model, missing dependency)."""
+
+
+def format_messages_fallback(messages: List[Message]) -> str:
+    """Plain-text prompt for models that ship without a chat template (same for every backend)."""
+    lines = []
+    for m in messages:
+        role = {"system": "System", "user": "User", "assistant": "Assistant"}.get(m["role"], m["role"])
+        lines.append(f"{role}: {m['content']}")
+    lines.append("Assistant:")
+    return "\n".join(lines)
+
+
+# Stop sequence that ends the assistant turn of ``format_messages_fallback`` prompts.
+FALLBACK_STOP = "\nUser:"
+
+
+class StopTrimmer:
+    """
+    Removes stop sequences from streamed text (OpenAI semantics: the stop sequence is not part of
+    the reply). ``feed`` returns what can be shown so far, holding back only a tail that could be the
+    start of a stop sequence; once a stop sequence appears, ``done`` is set and the rest is dropped.
+    """
+
+    def __init__(self, stops: List[str]):
+        self.stops = [s for s in stops if s]
+        self.buffer = ""
+        self.done = False
+
+    def feed(self, delta: str) -> str:
+        if self.done:
+            return ""
+        self.buffer += delta
+        hits = [self.buffer.find(s) for s in self.stops if s in self.buffer]
+        if hits:
+            out, self.buffer, self.done = self.buffer[: min(hits)], "", True
+            return out
+        hold = 0
+        for s in self.stops:
+            for k in range(min(len(s) - 1, len(self.buffer)), 0, -1):
+                if self.buffer.endswith(s[:k]):
+                    hold = max(hold, k)
+                    break
+        out, self.buffer = self.buffer[: len(self.buffer) - hold], self.buffer[len(self.buffer) - hold:]
+        return out
+
+    def flush(self) -> str:
+        out, self.buffer = ("" if self.done else self.buffer), ""
+        return out

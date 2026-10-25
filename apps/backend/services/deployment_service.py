@@ -96,7 +96,7 @@ def start_huggingface(
 ) -> str:
     """Export a local model to the Hub on a background thread; returns the deployment id."""
     info = inference.resolve_model(model_id)
-    if info.kind == "hf":
+    if info.kind in ("hf", "remote"):
         raise ValueError(f"'{model_id}' is not a local model")
 
     deployment_id = jobs.create(
@@ -107,7 +107,7 @@ def start_huggingface(
     def run() -> Dict[str, Any]:
         token = hf_token
         if not token:
-            from api.modelhub import get_hf_token
+            from services.hf_auth import get_hf_token
 
             token = get_hf_token()
 

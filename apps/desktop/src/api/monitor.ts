@@ -3,6 +3,7 @@
  */
 
 import { API_BASE } from '../config';
+import { jsonOrThrow } from './errors';
 
 export interface Alert {
   id: string;
@@ -47,6 +48,5 @@ export async function contextCheck(modelId: string, context: number): Promise<Co
   const res = await fetch(
     `${API_BASE}/api/monitor/context-check?model_id=${encodeURIComponent(modelId)}&context=${context}`
   );
-  if (!res.ok) throw new Error('Context check failed');
-  return res.json();
+  return jsonOrThrow<ContextCheck>(res);
 }

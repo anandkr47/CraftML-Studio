@@ -4,6 +4,7 @@ Handles model fine-tuning endpoints with Pydantic validation
 """
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from core.cloud.errors import CloudError
 from services import jobs as job_store
 from services.training_service import (
     start_training,
@@ -20,7 +21,6 @@ from models.responses import (
     TrainingStatusResponse,
     TrainingJobsResponse,
     TrainingJobCountsResponse,
-    ErrorResponse
 )
 
 router = APIRouter()
@@ -40,7 +40,7 @@ async def start_train(request: TrainingStartRequest, background_tasks: Backgroun
     """
     try:
         # Convert Pydantic model to dict
-        params = request.dict()
+        params = request.model_dump()
         
         # Start training
         job_id = start_training(params)
@@ -52,6 +52,8 @@ async def start_train(request: TrainingStartRequest, background_tasks: Backgroun
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except CloudError:
+        raise  # handled globally with the right status and a user-facing message
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start training: {str(e)}")
 

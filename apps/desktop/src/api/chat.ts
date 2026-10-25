@@ -3,6 +3,7 @@
  */
 
 import { API_BASE } from '../config';
+import { httpError, jsonOrThrow } from './errors';
 
 export interface GenerationSettings {
   temperature: number;
@@ -51,7 +52,7 @@ export interface LocalModel {
   id: string;
   name: string;
   path: string;
-  kind: 'full' | 'lora' | 'gguf' | 'hf';
+  kind: 'full' | 'lora' | 'gguf' | 'hf' | 'remote';
   size_mb: number;
   is_loaded: boolean;
 }
@@ -69,11 +70,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || body.message || res.statusText);
-  }
-  return res.json();
+  return jsonOrThrow<T>(res);
 }
 
 export const chatApi = {
@@ -88,11 +85,7 @@ export const chatApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model_name: repo, filename: filename || null }),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(typeof body.detail === 'string' ? body.detail : res.statusText);
-    }
-    return res.json() as Promise<{ local_path: string; size_mb: number }>;
+    return jsonOrThrow<{ local_path: string; size_mb: number }>(res);
   },
 
   listSessions: () => request<{ sessions: ChatSession[] }>('/sessions').then((r) => r.sessions),
@@ -103,16 +96,27 @@ export const chatApi = {
     request<ChatSession>(`/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteSession: (id: string) => request<unknown>(`/sessions/${id}`, { method: 'DELETE' }),
 
-  /** Download a session export as a file. */
-  async exportSession(id: string, format: 'json' | 'markdown', title: string) {
+  /**
+   * Export a session. In the desktop app the backend writes it to the Downloads folder (blob
+   * downloads aren't reliable in every OS webview); in a plain browser it downloads normally.
+   * Returns where it went, for the toast.
+   */
+  async exportSession(id: string, format: 'json' | 'markdown', title: string): Promise<string> {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      const res = await fetch(`${API_BASE}/api/chat/sessions/${id}/export/save?format=${format}`, { method: 'POST' });
+      return (await jsonOrThrow<{ path: string }>(res)).path;
+    }
     const res = await fetch(`${API_BASE}/api/chat/sessions/${id}/export?format=${format}`);
-    if (!res.ok) throw new Error('Export failed');
+    if (!res.ok) throw await httpError(res);
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement('a');
     a.href = url;
     a.download = `${title.replace(/[^\w-]+/g, '_') || 'chat'}.${format === 'markdown' ? 'md' : 'json'}`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return 'your downloads';
   },
 };
 
@@ -137,10 +141,8 @@ export async function streamReply(
     body: JSON.stringify(body),
     signal,
   });
-  if (!res.ok || !res.body) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || res.statusText);
-  }
+  if (!res.ok) throw await httpError(res);
+  if (!res.body) throw new Error('The server sent no response body');
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

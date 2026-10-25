@@ -2,9 +2,10 @@
 Pydantic Request Models for API Validation
 """
 
-from pydantic import BaseModel, Field, validator, model_validator
-from typing import Optional, List, Dict, Any, Literal
-from datetime import datetime
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import List, Literal, Optional
+
+from core.cloud.schemas import CloudTarget
 
 
 # ============================================================================
@@ -27,10 +28,10 @@ class TrainingConfig(BaseModel):
     num_epochs: int = Field(default=3, ge=1, le=100, description="Number of training epochs")
     batch_size: int = Field(default=4, ge=1, le=128, description="Training batch size")
     learning_rate: float = Field(default=2e-4, gt=0, le=1e-2, description="Learning rate")
-    warmup_steps: int = Field(default=100, ge=0, description="Warmup steps")
+    warmup_steps: Optional[int] = Field(default=None, ge=0, description="Warmup steps (default: 3% of the run)")
     save_steps: int = Field(default=100, ge=1, description="Save checkpoint every N steps")
-    logging_steps: int = Field(default=10, ge=1, description="Log every N steps")
-    gradient_accumulation_steps: int = Field(default=1, ge=1, description="Gradient accumulation")
+    logging_steps: Optional[int] = Field(default=None, ge=1, description="Log every N steps (default 5)")
+    gradient_accumulation_steps: Optional[int] = Field(default=None, ge=1, description="Gradient accumulation (default 1)")
     use_4bit: bool = Field(default=True, description="Use 4-bit quantization")
     use_8bit: bool = Field(default=False, description="Use 8-bit quantization (LoRA on CUDA)")
     max_seq_length: int = Field(default=512, ge=64, le=8192, description="Maximum tokens per training example")
@@ -44,13 +45,17 @@ class TrainingStartRequest(BaseModel):
     lora_config: Optional[LoRAConfig] = Field(default=None, description="LoRA configuration")
     training_config: Optional[TrainingConfig] = Field(default=None, description="Training configuration")
     
+    # Optional: run on a remote GPU instead of this machine
+    cloud: Optional[CloudTarget] = Field(default=None, description="Remote GPU target")
+
     # Training method selection
     training_method: Optional[Literal["qlora", "lora", "full"]] = Field(
         default="qlora",
         description="Training method: QLoRA (4-bit, fastest), LoRA (fast), or Full (best quality)"
     )
     
-    @validator('dataset_path')
+    @field_validator('dataset_path')
+    @classmethod
     def validate_dataset_path(cls, v):
         """Validate dataset path if provided"""
         if v and len(v.strip()) > 0:

@@ -23,6 +23,7 @@ import {
   compressApi,
 } from '../api/compress';
 import { useNotificationStore } from '../store/notificationStore';
+import { errorText } from '../api/errors';
 
 const fieldClass =
   'w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm';
@@ -102,6 +103,8 @@ const Compress: React.FC = () => {
   const [starting, setStarting] = useState(false);
   const timer = useRef<number | undefined>(undefined);
   const logOffset = useRef(0);
+  // Each watched job gets a generation; a stale loop (old job, or after unmount) stops itself.
+  const generation = useRef(0);
 
   const refreshHistory = useCallback(() => compressApi.jobs().then(setHistory).catch(() => undefined), []);
 
@@ -109,7 +112,10 @@ const Compress: React.FC = () => {
     chatApi.listModels().then((all) => setModels(all.filter((m) => m.kind === 'full' || m.kind === 'lora')));
     compressApi.tooling().then(setTooling).catch(() => undefined);
     refreshHistory();
-    return () => window.clearTimeout(timer.current);
+    return () => {
+      generation.current += 1;
+      window.clearTimeout(timer.current);
+    };
   }, [refreshHistory]);
 
   // Presets (with size estimates) follow the selected model.
@@ -120,7 +126,7 @@ const Compress: React.FC = () => {
         setPresets(p);
         setPresetId((current) => current ?? p.recommended);
       })
-      .catch((e) => showError(e.message));
+      .catch((e) => showError(errorText(e)));
   }, [modelId, showError]);
 
   const selectedPreset = presets?.presets.find((p) => p.id === presetId);
@@ -131,34 +137,51 @@ const Compress: React.FC = () => {
     : null;
   const needsLlamaCpp = effective?.method === 'gguf' && tooling && !tooling.ready;
 
-  const poll = useCallback(async (jobId: string) => {
-    try {
-      const [status, newLogs] = await Promise.all([compressApi.status(jobId), compressApi.logs(jobId, logOffset.current)]);
-      setJob(status);
-      if (newLogs.logs.length) {
-        logOffset.current += newLogs.logs.length;
-        setLogs((prev) => [...prev, ...newLogs.logs]);
-      }
-      if (status.status === 'pending' || status.status === 'running') {
-        timer.current = window.setTimeout(() => poll(jobId), 2000);
-      } else {
+  /** Watch a job until it finishes. Toasts only when a job we saw running finishes. */
+  const watch = useCallback((jobId: string) => {
+    window.clearTimeout(timer.current);
+    const gen = ++generation.current;
+    logOffset.current = 0;
+    setLogs([]);
+    let sawRunning = false;
+    let failures = 0;
+
+    const tick = async () => {
+      if (gen !== generation.current) return;
+      try {
+        const [status, newLogs] = await Promise.all([compressApi.status(jobId), compressApi.logs(jobId, logOffset.current)]);
+        if (gen !== generation.current) return; // superseded while the request was in flight
+        failures = 0;
+        setJob(status);
+        if (newLogs.logs.length) {
+          logOffset.current += newLogs.logs.length;
+          setLogs((prev) => [...prev, ...newLogs.logs]);
+        }
+        if (status.status === 'pending' || status.status === 'running') {
+          sawRunning = true;
+          timer.current = window.setTimeout(tick, 2000);
+          return;
+        }
         refreshHistory();
-        chatApi.listModels().then((all) => setModels(all.filter((m) => m.kind === 'full' || m.kind === 'lora')));
-        if (status.status === 'completed') showSuccess('Compression finished');
-        else showError(status.error || 'Compression failed');
+        chatApi.listModels().then((all) => setModels(all.filter((m) => m.kind === 'full' || m.kind === 'lora'))).catch(() => undefined);
+        if (sawRunning) {
+          if (status.status === 'completed') showSuccess('Compression finished');
+          else showError(status.error || 'Compression failed');
+        }
+      } catch (e) {
+        if (gen !== generation.current) return;
+        failures += 1;
+        if (failures === 3) showError(`Lost contact with the backend: ${errorText(e)}`);
+        timer.current = window.setTimeout(tick, Math.min(30000, 2000 * 2 ** failures));
       }
-    } catch (e) {
-      showError((e as Error).message);
-    }
+    };
+    tick();
   }, [refreshHistory, showError, showSuccess]);
 
   const start = async () => {
     if (!effective || !modelId) return;
     setStarting(true);
     try {
-      window.clearTimeout(timer.current);
-      logOffset.current = 0;
-      setLogs([]);
       setJob(null);
       const { job_id } = await compressApi.start({
         model_id: modelId,
@@ -167,9 +190,9 @@ const Compress: React.FC = () => {
         benchmark,
       });
       setJob({ job_id, status: 'running' });
-      poll(job_id);
+      watch(job_id);
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     } finally {
       setStarting(false);
     }
@@ -181,7 +204,7 @@ const Compress: React.FC = () => {
       setTooling(await compressApi.setupLlamaCpp());
       showSuccess('llama.cpp is ready');
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     } finally {
       setSettingUp(false);
     }
@@ -396,12 +419,7 @@ const Compress: React.FC = () => {
                 <li key={h.job_id} className="flex items-center justify-between py-2">
                   <button
                     className="text-brand-600 hover:underline truncate text-left"
-                    onClick={() => {
-                      window.clearTimeout(timer.current);
-                      logOffset.current = 0;
-                      setLogs([]);
-                      poll(h.job_id);
-                    }}
+                    onClick={() => watch(h.job_id)}
                   >
                     {h.model_id} → {h.output_id}
                   </button>

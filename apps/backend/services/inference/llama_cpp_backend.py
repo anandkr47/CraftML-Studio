@@ -6,7 +6,8 @@ from typing import Iterator, List, Optional
 from core.utils import setup_logger
 from core.config import settings
 
-from .types import GenerationParams, InferenceError, Message, Usage
+from .gguf_check import GgufLoadError, ensure_loadable
+from .types import FALLBACK_STOP, GenerationParams, InferenceError, Message, Usage, format_messages_fallback
 
 logger = setup_logger("inference_llama_cpp", log_file=str(settings.logs_dir / "inference_service.log"))
 
@@ -26,6 +27,11 @@ class LlamaCppBackend:
         self.n_ctx = n_ctx
         self._lock = threading.Lock()
         try:
+            # llama.cpp aborts the process on unsupported models; find out in a child process first.
+            ensure_loadable(path, n_ctx)
+        except GgufLoadError as exc:
+            raise InferenceError(f"Can't load GGUF model '{path}': {exc}") from exc
+        try:
             # n_gpu_layers=-1 offloads everything it can (Metal / CUDA builds), else runs on CPU.
             self.llm = Llama(
                 model_path=path, n_ctx=n_ctx, n_gpu_layers=-1, verbose=False, logits_all=logits_all
@@ -33,6 +39,9 @@ class LlamaCppBackend:
         except Exception as exc:
             raise InferenceError(f"Failed to load GGUF model '{path}': {exc}") from exc
         self.device = "gpu/cpu (llama.cpp)"
+        # Without a template in the file llama-cpp-python would fall back to Llama-2 [INST] tags,
+        # which other models echo back; use the same plain format as the Transformers backend.
+        self.has_chat_template = bool((self.llm.metadata or {}).get("tokenizer.chat_template"))
 
     def count_tokens(self, text: str) -> int:
         return len(self.llm.tokenize(text.encode("utf-8"), add_bos=False))
@@ -62,20 +71,24 @@ class LlamaCppBackend:
         completion = ""
         finish = "stop"
 
+        sampling = dict(
+            max_tokens=params.max_tokens,
+            temperature=params.temperature,
+            top_p=params.top_p,
+            top_k=params.top_k,
+            repeat_penalty=params.repetition_penalty,
+            stream=True,
+        )
         with self._lock:
-            chunks = self.llm.create_chat_completion(
-                messages=messages,
-                max_tokens=params.max_tokens,
-                temperature=params.temperature,
-                top_p=params.top_p,
-                top_k=params.top_k,
-                repeat_penalty=params.repetition_penalty,
-                stop=params.stop or None,
-                stream=True,
-            )
+            if self.has_chat_template:
+                chunks = self.llm.create_chat_completion(messages=messages, stop=params.stop or None, **sampling)
+            else:
+                chunks = self.llm.create_completion(
+                    prompt=format_messages_fallback(messages), stop=[FALLBACK_STOP, *(params.stop or [])], **sampling
+                )
             for chunk in chunks:
                 choice = chunk["choices"][0]
-                delta = choice.get("delta", {}).get("content")
+                delta = choice.get("delta", {}).get("content") if self.has_chat_template else choice.get("text")
                 if delta:
                     completion += delta
                     yield delta

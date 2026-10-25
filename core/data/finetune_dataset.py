@@ -30,13 +30,13 @@ class DatasetFormatError(ValueError):
 
 def load_raw(path: str) -> Dataset:
     file = Path(path)
-    if not file.exists():
-        raise DatasetFormatError(f"Dataset not found: {path}")
     ext = file.suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
         raise DatasetFormatError(
             f"Unsupported file type '{ext}'. Use JSONL, JSON, CSV, Parquet or TXT."
         )
+    if not file.exists():
+        raise DatasetFormatError(f"Dataset not found: {path}")
 
     try:
         if ext in (".jsonl", ".json"):
@@ -107,7 +107,7 @@ def to_text_dataset(dataset: Dataset, tokenizer=None) -> Dataset:
         raise DatasetFormatError("The dataset is empty")
 
     if fmt == "text":
-        texts = [str(t) for t in dataset["text"] if t not in (None, "")]
+        texts = [str(t) for t in list(dataset["text"]) if t not in (None, "")]
     else:
         texts = [render_conversation(row_to_messages(row, fmt), tokenizer) for row in dataset]
     return Dataset.from_dict({"text": texts})
@@ -129,7 +129,7 @@ def inspect_dataset(path: str, preview_rows: int = 3) -> Dict[str, Any]:
         problems.append("The dataset is empty.")
     else:
         try:
-            preview = to_text_dataset(dataset.select(range(min(preview_rows, len(dataset)))))["text"]
+            preview = [str(t) for t in to_text_dataset(dataset.select(range(min(preview_rows, len(dataset)))))["text"]]
         except (KeyError, TypeError) as exc:
             problems.append(f"Some rows are malformed: {exc}")
         if len(dataset) < 10:
@@ -137,7 +137,7 @@ def inspect_dataset(path: str, preview_rows: int = 3) -> Dict[str, Any]:
 
     return {
         "format": fmt,
-        "columns": columns,
+        "columns": [str(c) for c in columns],
         "num_samples": len(dataset),
         "preview": preview,
         "problems": problems,

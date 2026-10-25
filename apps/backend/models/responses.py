@@ -4,7 +4,6 @@ Pydantic Response Models for API
 
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
-from datetime import datetime
 
 
 # ============================================================================
@@ -146,7 +145,10 @@ class DeploymentSummary(BaseModel):
     type: str
     status: str
     started_at: str
+    completed_at: Optional[str] = None
     url: Optional[str] = None
+    base_url: Optional[str] = None
+    endpoints: Dict[str, str] = {}
     model_id: Optional[str] = None
     repo_url: Optional[str] = None
     error: Optional[str] = None

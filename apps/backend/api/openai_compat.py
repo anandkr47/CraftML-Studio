@@ -6,6 +6,7 @@ app (no auth) and in the dedicated Deploy server (optional API key).
 """
 
 import json
+import logging
 import time
 import uuid
 from typing import Any, Iterator, List, Optional, Union
@@ -16,6 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services import embeddings, inference
 from services.inference import GenerationParams, InferenceError, Usage
+
+logger = logging.getLogger(__name__)
 
 
 class ChatMessage(BaseModel):
@@ -93,7 +96,9 @@ def stream_completion(
     try:
         for delta in inference.stream_chat(model, messages, params, usage):
             yield sse(chunk_payload(completion_id, model, created, {"content": delta}))
-    except InferenceError as exc:
+    except Exception as exc:  # noqa: BLE001 - InferenceError or e.g. out of memory: report, then end the stream
+        if not isinstance(exc, InferenceError):
+            logger.exception("Streaming completion failed")
         yield sse({"error": {"message": str(exc), "type": "server_error"}})
         yield "data: [DONE]\n\n"
         return

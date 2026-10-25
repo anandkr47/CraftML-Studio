@@ -1,165 +1,186 @@
-import uvicorn
-import sys
+"""
+Backend entry point, used both from source and as the packaged sidecar (PyInstaller one-folder build).
+
+    python run_server.py [--host 127.0.0.1] [--port 17860] [--log-level info] [--console]
+
+``--run-python-script <script.py> [args...]`` / ``--run-python-module <module> [args...]`` run a
+Python script or module with this interpreter and exit (see core/utils/subproc.py).
+A packaged app has no separate Python, so tools such as llama.cpp's ``convert_hf_to_gguf.py`` are
+run through it (they then see the bundled torch/numpy/transformers).
+
+Everything happens under ``if __name__ == "__main__"``: multiprocessing children (spawn start
+method, and every child of a frozen app) re-run this file, and must neither start a server nor run
+the app's startup, which would mark the parent's running jobs as interrupted.
+"""
+
+import multiprocessing
 import os
-import shutil
+import sys
 from pathlib import Path
 
-# Windows-specific: Allocate console window when --console is used
-if sys.platform == "win32" and getattr(sys, 'frozen', False):
+FROZEN = bool(getattr(sys, "frozen", False))
+
+
+def bundle_dir() -> Path:
+    """PyInstaller keeps bundled modules and data under sys._MEIPASS (the _internal folder)."""
+    return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+
+
+def setup_import_path() -> None:
+    if FROZEN:
+        paths = [bundle_dir()]
+    else:
+        here = Path(__file__).resolve().parent
+        paths = [here.parents[1], here]  # repository root (core/) and apps/backend
+    for path in reversed([str(p) for p in paths]):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+
+def run_helper(mode: str, target: str, args) -> None:
+    import runpy
+
+    sys.argv = [target, *args]
+    if mode == "--run-python-script":
+        sys.path.insert(0, str(Path(target).resolve().parent))
+        runpy.run_path(target, run_name="__main__")
+    else:
+        runpy.run_module(target, run_name="__main__", alter_sys=True)
+
+
+def prepare_user_dirs(settings) -> None:
+    """Create the data directories; on first run copy bundled resources (never overwriting)."""
+    import shutil
+
+    for directory in (settings.user_data_dir, settings.models_dir, settings.datasets_dir, settings.logs_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+    bundled = bundle_dir() / "resources"
+    user_resources = settings.user_data_dir / "resources"
+    if bundled.is_dir():
+        for item in bundled.iterdir():
+            target = user_resources / item.name
+            if target.exists():
+                continue
+            user_resources.mkdir(parents=True, exist_ok=True)
+            if item.is_dir():
+                shutil.copytree(item, target)
+            else:
+                shutil.copy2(item, target)
+
+
+def allocate_console() -> bool:
+    """Attach to the parent console (or open one) for a packaged Windows build run with --console."""
     import ctypes
-    kernel32 = ctypes.windll.kernel32
-    
-    def allocate_console():
-        """Allocate a console window for Windows GUI applications"""
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    try:
+        if kernel32.AttachConsole(-1):  # ATTACH_PARENT_PROCESS
+            return True
+        if kernel32.AllocConsole():
+            sys.stdout = open("CONOUT$", "w")
+            sys.stderr = open("CONOUT$", "w")
+            return True
+    except OSError:
+        pass
+    return False
+
+
+def watch_parent() -> None:
+    """
+    Exit when the desktop app that launched us is gone.
+
+    The app stops the backend on a normal quit, but a crash, ``kill -9`` or a forced logout
+    gives it no chance, and an orphaned backend would keep the port (and any loaded model's
+    memory). ``CRAFTML_PARENT_PID`` is set by the launcher; PID reuse is ruled out by also
+    comparing the process start time.
+    """
+    raw = os.environ.get("CRAFTML_PARENT_PID", "")
+    if not raw.isdigit():
+        return
+    import threading
+    import time
+
+    import psutil
+
+    try:
+        parent = psutil.Process(int(raw))
+        born = parent.create_time()
+    except psutil.Error:
+        os._exit(0)
+
+    def alive() -> bool:
         try:
-            # Try to attach to parent console if running from terminal
-            if kernel32.AttachConsole(-1):  # ATTACH_PARENT_PROCESS
-                return True
-        except:
-            pass
-        
-        try:
-            # Otherwise, allocate a new console
-            if kernel32.AllocConsole():
-                # Reopen stdout/stderr to the new console
-                sys.stdout = open('CONOUT$', 'w')
-                sys.stderr = open('CONOUT$', 'w')
-                return True
-        except:
-            pass
-        
-        return False
+            return parent.is_running() and parent.create_time() == born
+        except psutil.Error:
+            return False
 
-# When frozen by Nuitka, use the bundled app directly
-# With --standalone: executable directory contains all bundled files
-# Nuitka doesn't use sys._MEIPASS, use os.path.dirname(sys.executable) instead
-if getattr(sys, 'frozen', False):
-    # Running as Nuitka bundle
-    # Get bundle directory and add it to sys.path so we can import main.py
-    import os
-    bundle_dir = Path(os.path.dirname(sys.executable))
-    if str(bundle_dir) not in sys.path:
-        sys.path.insert(0, str(bundle_dir))
-    
-    # Import from the bundled package (main.py is included via --include-data-file)
-    from main import app
-    
-    # Ensure user data directories exist on first run
-    from core.config import settings
-    
-    # Create base user data directory
-    settings.user_data_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Create writable directories (these will be empty initially, ready for user data)
-    settings.models_dir.mkdir(parents=True, exist_ok=True)
-    settings.datasets_dir.mkdir(parents=True, exist_ok=True)
-    settings.logs_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Get bundle directory (Nuitka: directory containing the executable)
-    # For Nuitka, sys.executable points to the EXE, so we get its directory
-    # (bundle_dir already set above)
-    
-    # Copy bundled resources to user data directory on first run
-    bundled_resources = bundle_dir / "resources"
-    user_resources_root = settings.user_data_dir / "resources"
-    
-    # Resource subdirectories that should be copied (read-only templates/icons)
-    read_only_subdirs = ["templates", "icons"]
-    # Writable subdirectories (models/datasets - copy initial content if any)
-    writable_subdirs = ["models", "datasets"]
-    
-    # Copy main resources directory structure if it doesn't exist (silently for speed)
-    if bundled_resources.exists() and not user_resources_root.exists():
-        # Silent setup - no prints to speed up startup
-        user_resources_root.mkdir(parents=True, exist_ok=True)
-        
-        # Copy read-only subdirectories (templates, icons)
-        for subdir in read_only_subdirs:
-            bundled_subdir = bundled_resources / subdir
-            user_subdir = user_resources_root / subdir
-            if bundled_subdir.exists() and bundled_subdir.is_dir():
-                shutil.copytree(bundled_subdir, user_subdir, dirs_exist_ok=False)
-        
-        # For writable subdirectories, copy initial content but allow overwrites
-        for subdir in writable_subdirs:
-            bundled_subdir = bundled_resources / subdir
-            user_subdir = user_resources_root / subdir
-            if bundled_subdir.exists() and bundled_subdir.is_dir():
-                # Only copy if user directory doesn't exist (preserve user data)
-                if not user_subdir.exists():
-                    shutil.copytree(bundled_subdir, user_subdir, dirs_exist_ok=False)
-        
-        # Copy any other files in resources root (if any)
-        for item in bundled_resources.iterdir():
-            if item.is_file() and not any(item.name.startswith(s) for s in read_only_subdirs + writable_subdirs):
-                user_file = user_resources_root / item.name
-                if not user_file.exists():
-                    shutil.copy2(item, user_file)
-    
-    # Ensure writable subdirectories exist even if resources weren't copied
-    for subdir in writable_subdirs:
-        user_subdir = user_resources_root / subdir
-        user_subdir.mkdir(parents=True, exist_ok=True)
-    
-    # Directory structure verified (silent for speed)
-else:
-    # Running as script in dev
-    PROJECT_ROOT = Path(__file__).resolve().parents[2]
-    if str(PROJECT_ROOT) not in sys.path:
-        sys.path.insert(0, str(PROJECT_ROOT))
-    from apps.backend.main import app
-    from core.config import settings
+    def loop() -> None:
+        while alive():
+            time.sleep(2)
+        os._exit(0)
+
+    threading.Thread(target=loop, name="parent-watchdog", daemon=True).start()
 
 
-if __name__ == "__main__":
+def main() -> None:
     import argparse
-    
+
+    setup_import_path()
+    if len(sys.argv) >= 3 and sys.argv[1] in ("--run-python-script", "--run-python-module"):
+        run_helper(sys.argv[1], sys.argv[2], sys.argv[3:])
+        return
+
     parser = argparse.ArgumentParser(description="CraftML Studio Backend Server")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=5000, help="Port to bind to (default: 5000)")
-    parser.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"], help="Log level (default: info)")
-    parser.add_argument("--console", action="store_true", help="Enable console output (for standalone testing)")
-    
+    parser.add_argument("--port", type=int, default=int(os.environ.get("CRAFTML_PORT", "17860")),
+                        help="Port to bind to (default: 17860, or $CRAFTML_PORT)")
+    parser.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"],
+                        help="Log level (default: info)")
+    parser.add_argument("--console", action="store_true", help="Show output (for standalone testing)")
     args = parser.parse_args()
-    
-    # Allocate console window on Windows if --console is used
-    if args.console and sys.platform == "win32" and getattr(sys, 'frozen', False):
-        if allocate_console():
-            print("Console window allocated for debugging output...")
-        else:
-            print("Warning: Could not allocate console window. Output may not be visible.")
-    
-    # Detect if running standalone (not from Tauri)
-    # When CRAFTML_ENV=prod, it's running from Tauri (silent mode)
-    # Otherwise, or with --console flag, show output
+
+    if args.console and sys.platform == "win32" and FROZEN and not allocate_console():
+        print("Warning: could not allocate a console window; output may not be visible.")
+
+    from core.config import settings
+
+    if FROZEN:
+        prepare_user_dirs(settings)
+
+    # Standalone (not launched by the desktop app, which sets CRAFTML_ENV=prod) or --console: be chatty.
     is_standalone = args.console or os.environ.get("CRAFTML_ENV") != "prod"
-    
     if is_standalone:
-        # Show startup info when running standalone
         print("=" * 70)
         print("CraftML Studio Backend Server")
         print("=" * 70)
-        if getattr(sys, 'frozen', False):
-            print(f"Running as: Nuitka bundle")
-            print(f"User data directory: {settings.user_data_dir}")
-            print(f"Logs directory: {settings.logs_dir}")
-        else:
-            print(f"Running as: Development script")
+        print("Running as:", "packaged build" if FROZEN else "development (source)")
+        print(f"User data directory: {settings.user_data_dir}")
         print(f"Starting server on http://{args.host}:{args.port}")
-        print(f"Log level: {args.log_level}")
-        print("=" * 70)
-        print()
-    
-    # Keep localhost/5000 for the desktop app integration
-    # Optimize for fast startup: single worker, no access log, minimal logging
+        print("=" * 70, flush=True)
+
+    watch_parent()
+
+    # Networks with broken IPv6 would otherwise stall every Hugging Face download for minutes.
+    from core.utils.net import start_ipv6_probe
+
+    start_ipv6_probe()
+
+    import uvicorn
+
+    from main import app  # app startup: database, interrupted-job cleanup, cloud reconcile
+
+    # The desktop shell and UI expect 127.0.0.1:17860 (see apps/desktop/src-tauri/src/backend_process.rs)
     uvicorn.run(
-        app, 
-        host=args.host, 
-        port=args.port, 
+        app,
+        host=args.host,
+        port=args.port,
         log_level=args.log_level,
-        access_log=is_standalone,  # Enable access logs when running standalone
-        workers=1,  # Single worker for desktop app
-        loop="asyncio"  # Use asyncio for better performance
+        access_log=is_standalone,
+        workers=1,
+        loop="asyncio",
     )
 
 
+if __name__ == "__main__":
+    multiprocessing.freeze_support()  # frozen builds: handle multiprocessing child invocations and exit
+    main()

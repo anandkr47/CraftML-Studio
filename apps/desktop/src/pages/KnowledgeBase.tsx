@@ -12,6 +12,7 @@ import { Badge } from '../components/ui/Badge';
 import { ChatSource } from '../api/chat';
 import { KbListing, kbApi } from '../api/kb';
 import { useNotificationStore } from '../store/notificationStore';
+import { errorText } from '../api/errors';
 
 const formatSize = (bytes: number) =>
   bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -30,7 +31,7 @@ const KnowledgeBase: React.FC = () => {
     try {
       setListing(await kbApi.list());
     } catch (e) {
-      showError(`Failed to load knowledge base: ${(e as Error).message}`);
+      showError(`Failed to load knowledge base: ${errorText(e)}`);
     }
   }, [showError]);
 
@@ -46,7 +47,7 @@ const KnowledgeBase: React.FC = () => {
       if (result.documents.length) showSuccess(`Added ${result.documents.length} document(s)`);
       result.errors.forEach((e) => showError(`${e.file}: ${e.error}`));
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     } finally {
       setUploading(false);
       await refresh();
@@ -59,7 +60,7 @@ const KnowledgeBase: React.FC = () => {
       setResults(null);
       await refresh();
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     }
   };
 
@@ -69,7 +70,7 @@ const KnowledgeBase: React.FC = () => {
     try {
       setResults(await kbApi.search(query.trim()));
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     } finally {
       setSearching(false);
     }

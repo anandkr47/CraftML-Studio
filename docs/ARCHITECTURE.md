@@ -1,346 +1,111 @@
-# CraftML Studio - Architecture Overview
-
-## System Architecture
-
-CraftML Studio is a **local-first AI infrastructure management platform** built as a monorepo with the following architecture:
+# Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Desktop App (Tauri)                       │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │         React Frontend (TypeScript + Tailwind)         │ │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │ │
-│  │  │Dashboard │ │ Crawler  │ │ Training │ │Deployment│ │ │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ │ │
-│  │                                                        │ │
-│  │  ┌────────────────────────────────────────────────┐  │ │
-│  │  │    Zustand State + API Client (axios)          │  │ │
-│  │  └────────────────────────────────────────────────┘  │ │
-│  └────────────────────────────────────────────────────────┘ │
-│                           │                                  │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │         Rust Backend Manager (Tauri Core)              │ │
-│  │  • Auto-starts Python backend on app launch            │ │
-│  │  • Manages backend process lifecycle                   │ │
-│  │  • Handles IPC between frontend and Rust              │ │
-│  └────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                            │
-                            │ HTTP (127.0.0.1:5000)
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│              FastAPI Backend (Python)                        │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │                  API Routes                             │ │
-│  │  /api/crawler | /api/train | /api/compress | /api/...  │ │
-│  └────────────────────────────────────────────────────────┘ │
-│                           │                                  │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │              Service Layer                              │ │
-│  │  • Crawler Service  • Training Service                 │ │
-│  │  • Compression Svc  • Deployment Service               │ │
-│  └────────────────────────────────────────────────────────┘ │
-│                           │                                  │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │                Core ML & Data Modules                   │ │
-│  │  ┌─────────────────┐      ┌─────────────────┐         │ │
-│  │  │   core/ml/      │      │   core/data/    │         │ │
-│  │  │  • training     │      │  • crawler      │         │ │
-│  │  │  • compression  │      │  • cleaner      │         │ │
-│  │  │  • deployment   │      │  • formatter    │         │ │
-│  │  │  • utils        │      │                 │         │ │
-│  │  └─────────────────┘      └─────────────────┘         │ │
-│  └────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  ML Infrastructure                           │
-│  • PyTorch + Transformers  • Local GPU/CPU                  │
-│  • Hugging Face Hub        • SQLite Database                │
-│  • Local File Storage      • Background Tasks (Celery)      │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────── CraftML Studio (Tauri 2) ─────────────────────────────┐
+│  React 19 UI (apps/desktop/src)          Rust shell (apps/desktop/src-tauri)       │
+│  Chat · Fine-Tune · Compress · KB ·      starts / supervises / stops the backend,  │
+│  Deploy · Settings                        reports its state and logs to the UI     │
+└───────────────┬───────────────────────────────────────────┬───────────────────────┘
+                │ HTTP + SSE + WebSocket, 127.0.0.1:17860   │ spawn, health probe
+┌───────────────▼───────────────────────────────────────────▼───────────────────────┐
+│  Python backend (apps/backend, FastAPI)                                            │
+│  api/       routes: /api/{chat,kb,train,compress,deploy,dataset,modelhub,monitor,  │
+│             jobs,settings,cloud}, OpenAI-compatible /v1, /ws/monitor               │
+│  services/  inference engine, chat store, RAG, training, compression, benchmark,   │
+│             local API server, monitoring, jobs, cloud orchestration, HF auth       │
+│  db/        SQLite (SQLAlchemy 2) + sqlite-vec                                     │
+│  core/      config, dataset loading, compression/GGUF, HF export, cloud GPU layer  │
+└───────────────────────────────────────────────────────────────────────────────────┘
+          │ optional, user-initiated: Hugging Face Hub, cloud GPU providers
 ```
 
-## Directory Structure
+## Desktop shell
+
+`src-tauri/src/backend_process.rs` owns the backend process:
+
+* **Which backend.** Packaged builds bundle the PyInstaller one-folder build as `bin/backend.tar.gz`
+  (an archive, because Tauri's resource copy would flatten the symlinks PyInstaller needs on macOS).
+  It is unpacked into a per-user directory named after the build (app version plus the archive's
+  size and mtime), so an update is always picked up and an interrupted unpack is never used. Debug builds (or
+  `CRAFTML_BACKEND_DIR`) run `apps/backend/run_server.py` with the project's virtualenv.
+* **Startup** runs on a background thread so the window appears at once. The health probe accepts only
+  a response from `craftml-backend`, so another service on the port is reported, not mistaken for the
+  backend. A healthy backend that is already running is reused unless it reports a different app
+  version.
+* **Shutdown.** The backend is stopped on app exit (SIGTERM, then kill), and on Ctrl+C, SIGTERM or
+  SIGHUP sent to the app. If the app dies without cleaning up, the backend's parent watchdog
+  (`CRAFTML_PARENT_PID`, checked against the parent's start time) exits on its own.
+* **Visibility.** `backend_status` / `get_backend_logs` feed the loading screen, which shows the
+  error, the end of the log and a Retry button when startup fails.
+
+## Backend
+
+**Errors.** Every error response has the shape `{"status": "error", "message", "detail", "code"}`;
+validation errors get a readable `message`. Streaming endpoints end with an error event plus
+`[DONE]`, never by cutting the connection.
+
+**Local-only API.** `api/security.py` rejects requests whose `Host` isn't loopback (DNS rebinding)
+and whose `Origin` isn't the app (`tauri://localhost`, `http(s)://tauri.localhost` on Windows) or
+the dev server. CORS uses the same allowlist. The separate model server started from Deploy is a
+different process-local server with its own optional API key.
+
+**Jobs.** Fine-tuning and compression jobs share one store (`services/jobs.py`: `job_runs`,
+`job_run_logs`, `job_run_metrics`), run in background threads, support cancellation, and are marked
+failed on the next start if the backend stopped mid-run.
+
+**Inference** (`services/inference`). The engine discovers local models (Hugging Face folders, LoRA
+adapters, GGUF files) and registered cloud models, and loads them through one `Backend` protocol:
+
+* Transformers (CUDA / MPS / CPU), with streaming and cancellation;
+* llama.cpp for GGUF. Each file is first loaded in a child process (`gguf_check.py`, cached per file),
+  because llama.cpp calls `abort()` on unsupported models;
+* remote OpenAI-compatible and Replicate endpoints.
+
+Models without a chat template use the same plain `User:`/`Assistant:` prompt in every backend, and
+stop sequences are never part of the reply. Models already in the Hugging Face cache load without the
+network (`core/utils/hub.py`).
+
+**Knowledge base** (`services/rag`). PDF, DOCX, Markdown and text are extracted, then split into
+overlapping chunks of about 800 characters. These are embedded locally with `BAAI/bge-small-en-v1.5`
+and stored in SQLite, with a `sqlite-vec` index (brute force if the extension can't load). The index
+repairs itself if it drifts from the chunk table. Grounded chat adds the top 4 chunks to the system
+prompt and returns them as citations.
+
+**Fine-tuning** (`services/training`). `EfficientTrainer` wraps PEFT LoRA/QLoRA (bitsandbytes 4/8-bit
+on NVIDIA) or full fine-tuning on Hugging Face `Trainer`, streaming progress, loss, learning rate,
+VRAM and logs into the job store. Datasets (JSONL, JSON, CSV, Parquet, TXT) are normalised by
+`core/data/finetune_dataset.py`.
+
+**Compression** (`core/ml/compression`, `services/compression_service.py`). GGUF uses llama.cpp's
+converter, which the backend runs with its own interpreter, including when packaged
+(`run_server.py --run-python-script`), plus llama-quantize or the bindings. INT8/INT4, GPTQ and AWQ
+need an NVIDIA GPU. LoRA adapters are merged first. The before/after report compares size, memory,
+perplexity and speed.
+
+**Monitoring** (`services/monitoring`). psutil plus NVML (NVIDIA) or unified memory (Apple), pushed
+over `/ws/monitor`, with RAM/VRAM pressure alerts and a "will this context fit" check.
+
+**Cloud GPUs** (`core/cloud`, `services/cloud_service.py`). See [CLOUD.md](CLOUD.md): provider
+plug-ins (RunPod, Modal, SSH; Together/Replicate/RunPod/SSH for inference), envelope-encrypted secrets
+(OS keychain master key, encrypted file), pinned SSH host keys, a hash-verified worker bundle, a
+versioned event protocol, hard runtime limits with remote dead-man switches, and reconciliation of
+leftover remote resources on startup.
+
+## Data
+
+All state lives under one per-user directory (see [SETUP.md](SETUP.md#where-things-are-stored)):
+`craftml.db` (jobs, chats, knowledge base, cloud runs and models), `models/`, `datasets/`, `logs/`,
+`cache/`, and the encrypted secret store. Nothing leaves the machine unless the user downloads or
+publishes models, chats with a cloud model, or runs a remote fine-tune.
+
+## Repository layout
 
 ```
-craftml-studio/
-├── apps/
-│   ├── desktop/              # Tauri + React application
-│   │   ├── src/             # React components and pages
-│   │   │   ├── api/         # API client and endpoints
-│   │   │   ├── components/  # Reusable UI components
-│   │   │   ├── pages/       # Route pages
-│   │   │   ├── store/       # Zustand state management
-│   │   │   ├── hooks/       # Custom React hooks
-│   │   │   └── layout/      # Layout components
-│   │   ├── src-tauri/       # Tauri Rust code
-│   │   │   ├── src/
-│   │   │   │   ├── lib.rs           # Main Tauri entry
-│   │   │   │   ├── main.rs          # App launcher
-│   │   │   │   └── backend_process.rs  # Backend manager
-│   │   │   └── tauri.conf.json      # Tauri configuration
-│   │   └── package.json
-│   │
-│   └── backend/             # FastAPI backend
-│       ├── api/            # API route handlers
-│       ├── services/       # Business logic services
-│       ├── db/            # Database models
-│       ├── tasks/         # Background tasks (Celery)
-│       ├── logs/          # Application logs
-│       ├── main.py        # FastAPI app entry
-│       └── requirements.txt
-│
-├── core/                   # Shared core modules
-│   ├── ml/                # Machine learning modules
-│   │   ├── training/      # LoRA/QLoRA fine-tuning
-│   │   ├── compression/   # Quantization, pruning, distillation
-│   │   ├── deployment/    # Local API, HuggingFace deployment
-│   │   └── utils/         # GPU monitoring, metrics
-│   │
-│   ├── data/             # Data processing modules
-│   │   ├── crawler/      # Web crawling
-│   │   ├── cleaner/      # Text cleaning
-│   │   └── formatter/    # Dataset formatting
-│   │
-│   ├── utils/            # Shared utilities
-│   │   └── logger.py     # Logging configuration
-│   │
-│   └── config/           # Configuration
-│       └── settings.py   # Application settings
-│
-├── plugins/              # Plugin system (extensibility)
-│   ├── compression/      # Custom compression methods
-│   ├── exporters/        # Model exporters
-│   └── datasets/         # Custom dataset loaders
-│
-├── resources/            # Application resources
-│   ├── icons/           # App icons
-│   ├── models/          # Stored models
-│   ├── datasets/        # Stored datasets
-│   └── templates/       # Project templates
-│
-├── scripts/             # Build and development scripts
-│   ├── setup.sh/.ps1    # Setup scripts
-│   ├── dev.sh/.ps1      # Development scripts
-│   └── build_desktop.sh/.ps1  # Build scripts
-│
-├── tests/              # Test suites
-│   ├── backend/        # Backend tests
-│   ├── frontend/       # Frontend tests
-│   ├── ml/            # ML module tests
-│   └── integration/    # Integration tests
-│
-├── docs/              # Documentation
-│   ├── SETUP.md       # Setup guide
-│   ├── ARCHITECTURE.md # This file
-│   ├── API_REFERENCE.md # API documentation
-│   └── USER_GUIDE.md   # User guide
-│
-├── pyproject.toml      # Python project metadata
-└── README.md          # Project overview
+apps/desktop/src/          React UI: pages/, components/, api/ (typed clients), store/ (zustand)
+apps/desktop/src-tauri/    Rust shell: backend launcher, Tauri config, bundled backend in bin/
+apps/backend/              FastAPI app: api/, services/, db/, models/ (request/response schemas)
+core/                      shared Python: config, data, ml/compression, ml/deployment, cloud, utils
+tests/                     pytest (no network, no GPU); runs on Linux, macOS and Windows in CI
+scripts/                   setup, dev, build, log helpers (bash + PowerShell)
+craftml-backend.spec       PyInstaller spec for the packaged backend
 ```
-
-## Technology Stack
-
-### Frontend (apps/desktop)
-- **Framework:** React 19 + TypeScript
-- **Desktop:** Tauri 2.0 (Rust)
-- **Styling:** TailwindCSS + SCSS
-- **State Management:** Zustand
-- **Routing:** React Router DOM
-- **HTTP Client:** Axios
-- **Charts:** Chart.js
-- **Build Tool:** Vite
-
-### Backend (apps/backend)
-- **Framework:** FastAPI
-- **Server:** Uvicorn
-- **Database:** SQLite (SQLAlchemy ORM)
-- **Task Queue:** Celery + Redis
-- **Logging:** Loguru
-
-### ML Stack (core/ml)
-- **Framework:** PyTorch
-- **Transformers:** Hugging Face Transformers
-- **Quantization:** bitsandbytes
-- **Fine-tuning:** PEFT (LoRA/QLoRA)
-- **Optimization:** Optimum
-- **GPU Monitoring:** psutil, GPUtil
-
-### Data Stack (core/data)
-- **Crawling:** aiohttp, BeautifulSoup4
-- **Processing:** Python standard library
-- **Formats:** JSONL, CSV, Parquet
-
-## Component Communication
-
-### Frontend ↔ Backend
-- **Protocol:** HTTP REST API
-- **Endpoint:** `http://127.0.0.1:5000/api/*`
-- **Format:** JSON
-- **Authentication:** None (local-only)
-
-### Frontend ↔ Tauri
-- **Protocol:** IPC (Inter-Process Communication)
-- **Commands:** `start_backend`, `stop_backend`, `backend_status`
-- **Format:** JSON
-
-### Backend ↔ Core Modules
-- **Import:** Direct Python imports
-- **Location:** Core modules added to Python path
-
-## Key Features
-
-### 1. Contextual Data Crawling
-- **Module:** `core/data/crawler`
-- **Features:**
-  - Async web crawling
-  - Content deduplication
-  - Configurable depth and page limits
-  - Automatic content extraction
-
-### 2. Model Fine-Tuning
-- **Module:** `core/ml/training`
-- **Features:**
-  - LoRA/QLoRA training
-  - 4-bit/8-bit quantization
-  - GPU/CPU support
-  - Progress tracking
-
-### 3. Model Compression
-- **Module:** `core/ml/compression`
-- **Methods:**
-  - INT8/INT4 quantization
-  - GPTQ quantization
-  - Magnitude pruning
-  - Knowledge distillation
-
-### 4. Model Deployment
-- **Module:** `core/ml/deployment`
-- **Options:**
-  - Local FastAPI server
-  - Hugging Face Hub upload
-  - Hugging Face Spaces
-
-### 5. Resource Monitoring
-- **Module:** `core/ml/utils`
-- **Metrics:**
-  - GPU utilization and memory
-  - CPU usage
-  - System memory
-  - Disk usage
-
-## Data Flow
-
-### Training Workflow
-```
-User Input (Frontend)
-  → API Request (/api/train/start)
-  → Training Service
-  → LoRA Trainer (core/ml/training)
-  → PyTorch Training Loop
-  → Save Model
-  → Update Status
-  → Notify Frontend
-```
-
-### Crawling Workflow
-```
-User Input (URLs + Config)
-  → API Request (/api/crawler/start)
-  → Crawler Service
-  → Web Crawler (core/data/crawler)
-  → Fetch Pages (async)
-  → Clean Text (core/data/cleaner)
-  → Format Dataset (core/data/formatter)
-  → Save to Disk
-  → Update Status
-```
-
-### Compression Workflow
-```
-Select Model
-  → Choose Method (quantize/prune/distill)
-  → API Request (/api/compress/start)
-  → Compression Service
-  → Compression Engine (core/ml/compression)
-  → Save Compressed Model
-  → Show Size Comparison
-```
-
-## Security Considerations
-
-### Local-First Design
-- All operations run locally
-- No cloud dependency for core features
-- Data never leaves the machine (unless explicitly deployed)
-
-### Network
-- Backend binds to `127.0.0.1` (localhost only)
-- No external network access required
-- CORS configured for Tauri origin
-
-### File System
-- Models and datasets stored in user-controlled directories
-- Configurable paths via environment variables
-
-## Performance Optimizations
-
-### Frontend
-- Lazy loading of pages
-- Memoized components
-- Virtual scrolling for large lists
-- Debounced API calls
-
-### Backend
-- Async request handling (FastAPI)
-- Background task processing (Celery)
-- Database connection pooling
-- Response caching
-
-### ML
-- Mixed precision training (FP16)
-- Gradient checkpointing
-- LoRA for efficient fine-tuning
-- Quantization for reduced memory
-
-## Extensibility
-
-### Plugin System
-- Custom compression algorithms
-- Custom dataset loaders
-- Custom model exporters
-- Custom training strategies
-
-### Configuration
-- Environment-based settings
-- Runtime configuration updates
-- User preferences storage
-
-## Future Enhancements
-
-1. **Cloud Integration** (optional)
-   - Remote training on cloud GPUs
-   - Model registry sync
-   - Collaborative workflows
-
-2. **Advanced Features**
-   - Multi-GPU training
-   - Distributed training
-   - Model versioning
-   - A/B testing
-
-3. **UI/UX**
-   - Dark/light themes
-   - Customizable layouts
-   - Keyboard shortcuts
-   - Command palette
-
-4. **ML Features**
-   - More compression methods
-   - AutoML capabilities
-   - Hyperparameter tuning
-   - Model ensembling
-

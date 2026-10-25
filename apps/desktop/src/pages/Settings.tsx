@@ -25,6 +25,8 @@ import { HStack, VStack } from '../components/ui/Stack';
 import { useNotificationStore } from '../store/notificationStore';
 import { Modal, ModalBody, ModalFooter } from '../components/ui/Modal';
 import { API_BASE } from '../config';
+import { messageFromBody } from '../api/errors';
+import { CloudSettings } from '../components/cloud/CloudSettings';
 
 interface HFTokenStatus {
   is_authenticated: boolean;
@@ -96,12 +98,13 @@ const Settings: React.FC = () => {
   };
 
   const handleSaveToken = async () => {
-    if (!hfToken.trim()) {
+    const token = hfToken.trim();
+    if (!token) {
       showError('Please enter a HuggingFace token');
       return;
     }
 
-    if (!hfToken.startsWith('hf_')) {
+    if (!token.startsWith('hf_') || token.length < 10) {
       showError('Invalid token format. HuggingFace tokens start with "hf_"');
       return;
     }
@@ -112,17 +115,17 @@ const Settings: React.FC = () => {
       const response = await fetch(`${API_BASE}/api/settings/hf-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: hfToken }),
+        body: JSON.stringify({ token }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (response.ok) {
         showSuccess('HuggingFace token saved successfully!');
         setHfToken('');
         await checkTokenStatus();
       } else {
-        showError(data.detail || 'Failed to save token');
+        showError(messageFromBody(data, 'Failed to save token'));
       }
     } catch (error) {
       showError('Failed to connect to server');
@@ -337,6 +340,10 @@ const Settings: React.FC = () => {
             </VStack>
           </CardContent>
         </Card>
+
+      <div className="my-6">
+        <CloudSettings />
+      </div>
 
       {/* Application Updates */}
       <Card>

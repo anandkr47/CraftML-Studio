@@ -151,7 +151,7 @@ def test_huggingface_export_builds_card_from_finetune_job(tiny_model, monkeypatc
 def test_huggingface_export_failure_is_recorded(tiny_model, monkeypatch):
     monkeypatch.setattr(deployment_service, "deploy_to_huggingface",
                         lambda **kw: {"status": "failed", "error": "401 unauthorized"})
-    monkeypatch.setattr("api.modelhub.get_hf_token", lambda: None)
+    monkeypatch.setattr("services.hf_auth.get_hf_token", lambda: None)
     dep_id = deployment_service.start_huggingface(tiny_model.id, "me/x")
     for _ in range(100):
         if jobs.get(dep_id)["status"] not in ("pending", "running"):

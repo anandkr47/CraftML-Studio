@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Sequence
 
 from sqlalchemy import func
 
-from db.models import KbChunk, KbDocument, SessionLocal, engine
+from db.models import KbChunk, KbDocument, SessionLocal, engine, iso_utc
 
 EMBEDDING_DIM = 384  # BAAI/bge-small-en-v1.5
 
@@ -35,6 +35,37 @@ def _ensure_vec_table(conn) -> None:
     )
 
 
+def _ensure_meta(conn) -> None:
+    conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS kb_meta (key TEXT PRIMARY KEY, value TEXT)")
+
+
+def _mark_index_dirty(conn) -> None:
+    """Record that kb_chunks changed while the vector index couldn't be updated."""
+    _ensure_meta(conn)
+    conn.exec_driver_sql("INSERT OR REPLACE INTO kb_meta(key, value) VALUES ('vec_dirty', '1')")
+
+
+def _sync_vec_index(conn) -> None:
+    """
+    Make the vec0 index match ``kb_chunks``.
+
+    They can drift if chunks were added or deleted while the extension couldn't load (chunk ids,
+    which double as index row ids, may then be reused).  Such changes set a dirty marker; a dirty
+    marker or a count / max-id mismatch triggers a full rebuild, so the index is never partially
+    wrong.  The common case costs two cheap aggregate queries.
+    """
+    _ensure_vec_table(conn)
+    _ensure_meta(conn)
+    dirty = conn.exec_driver_sql("SELECT value FROM kb_meta WHERE key = 'vec_dirty'").fetchone()
+    chunks = conn.exec_driver_sql("SELECT count(*), coalesce(max(id), 0) FROM kb_chunks").fetchone()
+    indexed = conn.exec_driver_sql("SELECT count(*), coalesce(max(rowid), 0) FROM vec_chunks").fetchone()
+    if not dirty and tuple(chunks) == tuple(indexed):
+        return
+    conn.exec_driver_sql("DELETE FROM vec_chunks")
+    conn.exec_driver_sql("INSERT INTO vec_chunks(rowid, embedding) SELECT id, embedding FROM kb_chunks")
+    conn.exec_driver_sql("DELETE FROM kb_meta WHERE key = 'vec_dirty'")
+
+
 def _doc_dict(doc: KbDocument) -> Dict[str, Any]:
     return {
         "id": doc.id,
@@ -42,7 +73,7 @@ def _doc_dict(doc: KbDocument) -> Dict[str, Any]:
         "ext": doc.ext,
         "size_bytes": doc.size_bytes,
         "num_chunks": doc.num_chunks,
-        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "created_at": iso_utc(doc.created_at),
     }
 
 
@@ -54,6 +85,8 @@ def add_document(
         doc = KbDocument(name=name, ext=ext, size_bytes=size_bytes, num_chunks=len(chunks))
         db.add(doc)
         db.flush()
+        if use_vec:
+            _sync_vec_index(db.connection())  # repair drift before adding (our new rows aren't in kb_chunks yet)
 
         rows = [
             KbChunk(document_id=doc.id, chunk_index=i, text=text, embedding=pack(vec))
@@ -62,10 +95,13 @@ def add_document(
         db.add_all(rows)
         db.flush()
 
-        if use_vec:
+        if not use_vec:
+            _mark_index_dirty(db.connection())
+        else:
             conn = db.connection()
-            _ensure_vec_table(conn)
             for row in rows:
+                # replace, never collide: a stale index row may hold a reused id
+                conn.exec_driver_sql("DELETE FROM vec_chunks WHERE rowid = ?", (row.id,))
                 conn.exec_driver_sql(
                     "INSERT INTO vec_chunks(rowid, embedding) VALUES (?, ?)", (row.id, row.embedding)
                 )
@@ -97,6 +133,8 @@ def delete_document(doc_id: int) -> bool:
             conn.exec_driver_sql(
                 f"DELETE FROM vec_chunks WHERE rowid IN ({','.join('?' * len(ids))})", tuple(ids)
             )
+        elif ids:
+            _mark_index_dirty(db.connection())  # index rows for these ids survive until the next rebuild
         db.query(KbChunk).filter(KbChunk.document_id == doc_id).delete()
         db.delete(doc)
         db.commit()
@@ -106,8 +144,8 @@ def delete_document(doc_id: int) -> bool:
 def search(query_vector: Sequence[float], top_k: int = 4) -> List[Dict[str, Any]]:
     """Most similar chunks as ``{document, chunk_index, text, score}`` (cosine, higher is better)."""
     if vec_available():
-        with engine.connect() as conn:
-            _ensure_vec_table(conn)
+        with engine.begin() as conn:
+            _sync_vec_index(conn)
             hits = conn.exec_driver_sql(
                 "SELECT rowid, distance FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance",
                 (pack(query_vector), top_k),

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from core.ml.compression.calibration import SAMPLE_TEXTS
+from core.utils.hub import cached_first
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +38,13 @@ def merge_lora_adapter(adapter_dir: str, output_dir: str) -> str:
 
     base_name = json.loads((Path(adapter_dir) / "adapter_config.json").read_text())["base_model_name_or_path"]
     logger.info(f"Merging adapter {adapter_dir} into {base_name}")
-    base = AutoModelForCausalLM.from_pretrained(base_name, torch_dtype=torch.float16, trust_remote_code=True)
+    base = cached_first(AutoModelForCausalLM.from_pretrained, base_name, dtype=torch.float16, trust_remote_code=True)
     merged = PeftModel.from_pretrained(base, adapter_dir).merge_and_unload()
     merged.save_pretrained(output_dir, safe_serialization=True)
     try:
         tokenizer = AutoTokenizer.from_pretrained(adapter_dir, trust_remote_code=True)
     except Exception:  # noqa: BLE001 - adapter folder may lack a tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(base_name, trust_remote_code=True)
+        tokenizer = cached_first(AutoTokenizer.from_pretrained, base_name, trust_remote_code=True)
     tokenizer.save_pretrained(output_dir)
     return output_dir
 

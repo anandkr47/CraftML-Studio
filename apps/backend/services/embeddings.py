@@ -9,6 +9,7 @@ import threading
 from typing import List, Optional
 
 from core.config import settings
+from core.utils.hub import cached_first
 from core.utils import setup_logger
 
 logger = setup_logger("embeddings", log_file=str(settings.logs_dir / "embeddings.log"))
@@ -27,7 +28,7 @@ def _get_model(name: str):
             from sentence_transformers import SentenceTransformer
 
             logger.info(f"Loading embedding model {name}")
-            _model = SentenceTransformer(name)
+            _model = cached_first(SentenceTransformer, name)
             _model_name = name
         return _model
 

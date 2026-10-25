@@ -10,7 +10,6 @@ from typing import Any, Dict, Optional
 from core.config import settings
 from core.utils import setup_logger
 from services import jobs
-from services.training.efficient_trainer import start_efficient_training
 
 logger = setup_logger("training_service", log_file=str(settings.logs_dir / "training_service.log"))
 
@@ -96,6 +95,13 @@ def start_training(params: Dict[str, Any]) -> str:
     if not params.get("dataset_path"):
         raise ValueError("dataset_path is required for training")
 
+    cloud = params.get("cloud")
+    if cloud:  # fail fast, before a job exists, if the remote target can't work
+        from core.cloud.schemas import CloudTarget
+        from services import cloud_service
+
+        cloud_service.validate_target(CloudTarget(**cloud))
+
     job_id = jobs.create(JOB_TYPE, params, status="running")
     logger.info(f"Starting training job {job_id} with params: {params}")
 
@@ -108,7 +114,26 @@ def start_training(params: Dict[str, Any]) -> str:
     _add_log(job_id, f"Training method: {training_method.upper()}")
     _add_log(job_id, f"Output directory: {output_dir}")
 
+    if cloud:
+        from core.cloud.manager import ProgressSink
+        from services import cloud_service
+
+        _add_log(job_id, f"Remote GPU: {cloud['provider'] if isinstance(cloud['provider'], str) else cloud['provider'].value}")
+        sink = ProgressSink(
+            log=lambda message: _add_log(job_id, message),
+            progress=lambda **kw: update_progress(job_id, **kw),
+        )
+        jobs.run_in_thread(
+            job_id,
+            lambda: cloud_service.run_remote_training(
+                job_id, {**params, "output_dir": output_dir}, sink, lambda: jobs.should_cancel(job_id)
+            ),
+        )
+        return job_id
+
     def run() -> Dict[str, Any]:
+        from services.training.efficient_trainer import start_efficient_training  # heavy ML imports: only for local runs
+
         result = start_efficient_training(
             job_id=job_id,
             model_name=params["model_name"],

@@ -10,7 +10,7 @@ Any other id containing ``/`` is treated as a Hugging Face repo id.
 
 import threading
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from core.config import settings
 from core.utils import setup_logger
@@ -21,6 +21,15 @@ logger = setup_logger("inference_engine", log_file=str(settings.logs_dir / "infe
 
 _loaded: Dict[str, Backend] = {}
 _load_lock = threading.Lock()
+
+# Remote (cloud) models are registered by the cloud service so the engine stays free of DB/provider imports.
+_remote_source: Optional[Callable[[], List[ModelInfo]]] = None
+_remote_resolver: Optional[Callable[[str], Any]] = None  # model id -> InferenceEndpoint
+
+
+def configure_remote(source: Callable[[], List[ModelInfo]], resolver: Callable[[str], Any]) -> None:
+    global _remote_source, _remote_resolver
+    _remote_source, _remote_resolver = source, resolver
 
 
 def _dir_size_mb(path: Path) -> float:
@@ -66,6 +75,12 @@ def discover_models() -> List[ModelInfo]:
                 kind="gguf",
                 size_mb=round(gguf.stat().st_size / (1024 * 1024), 2),
             )
+    if _remote_source is not None:
+        try:
+            for remote in _remote_source():
+                found.setdefault(remote.id, remote)
+        except Exception as exc:  # noqa: BLE001 - a broken registry must not hide local models
+            logger.warning(f"Could not list remote models: {exc}")
     return list(found.values())
 
 
@@ -93,10 +108,16 @@ def load_model(model_id: str, device: str = "auto", n_ctx: Optional[int] = None)
             return _loaded[model_id]
 
         info = resolve_model(model_id)
-        if info.kind == "gguf":
+        if info.kind == "remote":
+            from .remote_backend import RemoteBackend
+
+            if _remote_resolver is None:
+                raise InferenceError("Cloud models aren't available.")
+            backend = RemoteBackend(_remote_resolver(model_id))
+        elif info.kind == "gguf":
             from .llama_cpp_backend import DEFAULT_CONTEXT, LlamaCppBackend
 
-            backend: Backend = LlamaCppBackend(info.path, n_ctx=n_ctx or DEFAULT_CONTEXT)
+            backend = LlamaCppBackend(info.path, n_ctx=n_ctx or DEFAULT_CONTEXT)
         else:
             from .transformers_backend import TransformersBackend
 

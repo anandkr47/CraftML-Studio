@@ -30,10 +30,18 @@ export const useMonitorStore = create<MonitorState>((set) => {
     const ws = new WebSocket(`${WS_BASE}/ws/monitor`);
     socket = ws;
 
-    ws.onopen = () => set({ connected: true });
+    ws.onopen = () => {
+      if (socket === ws) set({ connected: true });
+    };
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      if (socket !== ws) return;
+      let data: any;
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        return;
+      }
       if (data.type !== 'metrics') return;
       const reading = data as Telemetry;
       set((s) => ({ latest: reading, history: [...s.history, reading].slice(-HISTORY) }));
@@ -50,8 +58,10 @@ export const useMonitorStore = create<MonitorState>((set) => {
     };
 
     ws.onclose = () => {
+      if (socket !== ws) return; // a superseded socket closing late must not clobber the current one
       socket = null;
       set({ connected: false });
+      window.clearTimeout(retryTimer);
       if (wanted) retryTimer = window.setTimeout(connect, RECONNECT_MS);
     };
     ws.onerror = () => ws.close();
@@ -68,8 +78,10 @@ export const useMonitorStore = create<MonitorState>((set) => {
     stop: () => {
       wanted = false;
       window.clearTimeout(retryTimer);
-      socket?.close();
+      const current = socket;
       socket = null;
+      current?.close();
+      set({ connected: false });
     },
   };
 });

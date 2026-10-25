@@ -44,6 +44,12 @@ def fake_embed(texts, model_name=None):
 @pytest.fixture()
 def client(monkeypatch):
     Base.metadata.drop_all(bind=engine)
+    with engine.begin() as conn:  # the vec0 index and its marker aren't ORM tables
+        conn.exec_driver_sql("DROP TABLE IF EXISTS kb_meta")
+        try:
+            conn.exec_driver_sql("DROP TABLE IF EXISTS vec_chunks")
+        except Exception:  # noqa: BLE001 - extension not loadable: nothing to drop
+            pass
     init_db()
     monkeypatch.setattr(embeddings, "embed", fake_embed)
 
@@ -128,3 +134,37 @@ def test_chat_without_kb_has_no_sources(client):
     sid = client.post("/api/chat/sessions", json={"model_id": "tiny"}).json()["id"]
     client.post(f"/api/chat/sessions/{sid}/messages/stream", json={"content": "cats?"})
     assert all(m["role"] != "system" for m in client.seen["messages"])
+
+
+def test_vector_index_repairs_itself_after_chunks_were_written_without_it(client, monkeypatch):
+    """Chunks added while sqlite-vec couldn't load must still be found once it can (no silent misses)."""
+    from services.rag import store
+
+    if not store.vec_available():
+        pytest.skip("sqlite-vec extension not available in this environment")
+    monkeypatch.setattr(store, "vec_available", lambda: False)
+    upload(client, "old.md", "Penguins live in the southern hemisphere and cannot fly.")
+    monkeypatch.undo()
+    monkeypatch.setattr(embeddings, "embed", fake_embed)
+
+    upload(client, "new.md", "Volcanoes erupt molten rock called lava.")
+    hits = client.post("/api/kb/search", json={"query": "penguins cannot fly", "top_k": 1}).json()["results"]
+    assert hits and hits[0]["document"] == "old.md"
+    hits = client.post("/api/kb/search", json={"query": "volcanoes lava", "top_k": 1}).json()["results"]
+    assert hits and hits[0]["document"] == "new.md"
+
+
+def test_deleting_while_the_index_is_unavailable_never_leaves_stale_results(client, monkeypatch):
+    from services.rag import store
+
+    if not store.vec_available():
+        pytest.skip("sqlite-vec extension not available in this environment")
+    upload(client, "a.md", "Alpha particles are helium nuclei.")
+    doc = client.get("/api/kb/documents").json()["documents"][0]
+    monkeypatch.setattr(store, "vec_available", lambda: False)
+    client.delete(f"/api/kb/documents/{doc['id']}")             # index row survives (extension "missing")
+    upload(client, "b.md", "Bananas are yellow fruit.")          # may reuse the chunk id
+    monkeypatch.undo()
+    monkeypatch.setattr(embeddings, "embed", fake_embed)
+    hits = client.post("/api/kb/search", json={"query": "helium nuclei alpha", "top_k": 3}).json()["results"]
+    assert [h["document"] for h in hits] == ["b.md"]             # only real documents, never the deleted one

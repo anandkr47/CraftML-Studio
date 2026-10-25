@@ -135,3 +135,23 @@ def test_legacy_training_jobs_are_migrated():
     with engine.begin() as conn:
         tables = {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
     assert "training_jobs" not in tables
+
+
+def test_timestamps_carry_an_explicit_utc_offset():
+    # The UI parses these with `new Date()`, which treats offset-less ISO strings as local time.
+    from datetime import datetime, timedelta, timezone
+
+    job_id = jobs.create("finetune", {})
+    created = datetime.fromisoformat(jobs.get(job_id)["created_at"])
+    assert created.tzinfo is not None
+    assert abs(datetime.now(timezone.utc) - created) < timedelta(minutes=1)
+
+
+def test_log_lines_use_local_time():
+    from datetime import datetime
+
+    job_id = jobs.create("finetune", {})
+    jobs.append_log(job_id, "hello")
+    line = jobs.get_logs(job_id)["logs"][0]
+    stamp = datetime.strptime(line[1:20], "%Y-%m-%d %H:%M:%S")
+    assert abs((datetime.now() - stamp).total_seconds()) < 60 and line.endswith("] hello")

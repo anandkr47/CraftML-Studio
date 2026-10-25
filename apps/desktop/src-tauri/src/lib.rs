@@ -1,73 +1,56 @@
 mod backend_process;
-use backend_process::{BackendProcess, start_backend, stop_backend, backend_status, get_backend_logs};
-use tauri::Manager;
+
+use std::sync::Arc;
+
+use backend_process::{
+    backend_status, get_backend_logs, start_backend, start_in_background, stop_backend, BackendProcess, LaunchConfig,
+};
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let backend = BackendProcess::new();
+    let backend = Arc::new(BackendProcess::new());
 
-    tauri::Builder::default()
-        .manage(backend)
+    let app = tauri::Builder::default()
+        .manage(backend.clone())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![
-            start_backend,
-            stop_backend,
-            backend_status,
-            get_backend_logs
-        ])
+        .invoke_handler(tauri::generate_handler![start_backend, stop_backend, backend_status, get_backend_logs])
         .setup(|app| {
-            // Start backend and wait for it to be ready before showing UI
-            let backend_state = app.state::<BackendProcess>();
-            
-            println!("Starting backend server...");
-            
-            // Start backend
-            let resource_dir = app.path().resource_dir();
-            let start_result = if let Ok(rd) = resource_dir {
-                backend_state.start_with_resource_dir(rd)
-            } else {
-                backend_state.start()
+            let paths = app.path();
+            // Per-user locations: ~/Library/{Application Support,Logs}/com.craftml.studio on macOS,
+            // %LOCALAPPDATA%\com.craftml.studio on Windows, ~/.local/share/com.craftml.studio on Linux.
+            let local_data = paths
+                .app_local_data_dir()
+                .unwrap_or_else(|_| std::env::temp_dir().join("craftml-studio"));
+            let log_dir = paths.app_log_dir().unwrap_or_else(|_| local_data.join("logs"));
+            let config = LaunchConfig {
+                app_version: app.package_info().version.to_string(),
+                resource_dir: paths.resource_dir().ok(),
+                runtime_dir: local_data.join("backend"),
+                log_dir,
             };
-            
-            match start_result {
-                Ok(msg) => {
-                    println!("Backend: {}", msg);
-                    println!("Waiting for backend to be ready...");
-                    
-                    // Wait for backend to be ready (max 30 seconds)
-                    match backend_state.wait_for_ready(30) {
-                        Ok(()) => {
-                            println!("Backend is ready!");
-                        }
-                        Err(e) => {
-                            eprintln!("Backend failed to start: {}", e);
-                            
-                            // Log backend error output for debugging
-                            if let Ok(logs) = get_backend_logs() {
-                                eprintln!("Backend stdout:\n{}", logs["stdout"].as_str().unwrap_or(""));
-                                eprintln!("Backend stderr:\n{}", logs["stderr"].as_str().unwrap_or(""));
-                            }
-                            
-                            // Continue anyway - user can retry
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Failed to start backend: {}", e);
-                    
-                    // Log backend error output for debugging
-                    if let Ok(logs) = get_backend_logs() {
-                        eprintln!("Backend stdout:\n{}", logs["stdout"].as_str().unwrap_or(""));
-                        eprintln!("Backend stderr:\n{}", logs["stderr"].as_str().unwrap_or(""));
-                    }
-                    
-                    // Continue anyway - user can retry manually
-                }
-            }
-            
+
+            let backend = app.state::<Arc<BackendProcess>>().inner().clone();
+            backend.configure(config);
+            // In the background, so the window (and its loading screen) appears immediately;
+            // the UI polls `backend_status` and the health endpoint.
+            start_in_background(backend);
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // Ctrl+C in a terminal, SIGTERM/SIGHUP (logout, `kill`) or closing the console on Windows:
+    // exit through the normal path so the backend is stopped below.
+    let handle = app.handle().clone();
+    if let Err(e) = ctrlc::set_handler(move || handle.exit(0)) {
+        eprintln!("Could not install the termination handler: {e}");
+    }
+
+    app.run(move |_app, event| {
+        if let RunEvent::Exit = event {
+            let _ = backend.stop();
+        }
+    });
 }

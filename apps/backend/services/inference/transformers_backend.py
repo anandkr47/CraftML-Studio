@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import Iterator, List, Optional
 
 from core.utils import setup_logger
+from core.utils.hub import cached_first
 from core.config import settings
 
-from .types import GenerationParams, InferenceError, Message, Usage
+from .types import FALLBACK_STOP, GenerationParams, InferenceError, Message, StopTrimmer, Usage, format_messages_fallback
 
 logger = setup_logger("inference_transformers", log_file=str(settings.logs_dir / "inference_service.log"))
 
@@ -23,16 +24,6 @@ def detect_device(requested: str = "auto") -> str:
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         return "mps"
     return "cpu"
-
-
-def format_messages_fallback(messages: List[Message]) -> str:
-    """Plain-text prompt for tokenizers that ship without a chat template."""
-    lines = []
-    for m in messages:
-        role = {"system": "System", "user": "User", "assistant": "Assistant"}.get(m["role"], m["role"])
-        lines.append(f"{role}: {m['content']}")
-    lines.append("Assistant:")
-    return "\n".join(lines)
 
 
 class TransformersBackend:
@@ -58,19 +49,19 @@ class TransformersBackend:
 
                 base_name = json.loads(adapter_cfg.read_text()).get("base_model_name_or_path")
                 logger.info(f"Loading base model {base_name} for adapter {path}")
-                base = AutoModelForCausalLM.from_pretrained(base_name, torch_dtype=dtype, trust_remote_code=True)
+                base = cached_first(AutoModelForCausalLM.from_pretrained, base_name, dtype=dtype, trust_remote_code=True)
                 self.model = PeftModel.from_pretrained(base, path)
                 try:
                     self.tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
                 except Exception:
-                    self.tokenizer = AutoTokenizer.from_pretrained(base_name, trust_remote_code=True)
+                    self.tokenizer = cached_first(AutoTokenizer.from_pretrained, base_name, trust_remote_code=True)
             else:
                 logger.info(f"Loading model {path}")
-                self.tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
+                self.tokenizer = cached_first(AutoTokenizer.from_pretrained, path, trust_remote_code=True)
                 if self.quantized:
-                    self.model = AutoModelForCausalLM.from_pretrained(path, device_map="auto", trust_remote_code=True)
+                    self.model = cached_first(AutoModelForCausalLM.from_pretrained, path, device_map="auto", trust_remote_code=True)
                 else:
-                    self.model = AutoModelForCausalLM.from_pretrained(path, torch_dtype=dtype, trust_remote_code=True)
+                    self.model = cached_first(AutoModelForCausalLM.from_pretrained, path, dtype=dtype, trust_remote_code=True)
         except Exception as exc:
             raise InferenceError(f"Failed to load model '{path}': {exc}") from exc
 
@@ -141,8 +132,12 @@ class TransformersBackend:
         )
         if params.temperature > 0:
             gen_kwargs["temperature"] = params.temperature
-        if params.stop:
-            gen_kwargs.update(stop_strings=params.stop, tokenizer=self.tokenizer)
+        stops = list(params.stop or [])
+        if not getattr(self.tokenizer, "chat_template", None):
+            stops.append(FALLBACK_STOP)  # end of the assistant turn in the plain-text prompt
+        if stops:
+            gen_kwargs.update(stop_strings=stops, tokenizer=self.tokenizer)
+        trimmer = StopTrimmer(stops)  # generate() keeps the stop string in its output; the API must not
 
         errors: List[BaseException] = []
 
@@ -160,8 +155,16 @@ class TransformersBackend:
             text = ""
             try:
                 for delta in streamer:
-                    text += delta
-                    yield delta
+                    piece = trimmer.feed(delta)
+                    if piece:
+                        text += piece
+                        yield piece
+                    if trimmer.done:
+                        break
+                tail = trimmer.flush()
+                if tail:
+                    text += tail
+                    yield tail
             finally:
                 cancel.set()  # also fires when the client disconnects mid-stream
                 thread.join()

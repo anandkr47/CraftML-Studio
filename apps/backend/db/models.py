@@ -8,11 +8,9 @@ the app is packaged, and falls back to the repository copy during development.
 
 from __future__ import annotations
 
-import os
-import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -34,6 +32,32 @@ except Exception:  # pragma: no cover - fallback for early bootstrap scripts
     app_settings = None
 
 DB_FILENAME = "craftml.db"
+
+
+def utcnow() -> datetime:
+    """Current UTC time as a naive datetime (how timestamps are stored in SQLite here)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def utc_from_timestamp(ts: float) -> datetime:
+    return datetime.fromtimestamp(ts, timezone.utc).replace(tzinfo=None)
+
+
+def iso_utc(value: Optional[datetime]) -> Optional[str]:
+    """
+    ISO 8601 with an explicit UTC offset for a stored (naive UTC) timestamp. Without the offset,
+    JavaScript's ``new Date()`` would read it as local time and every time in the UI would be off.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
+
+
+def local_time(value: datetime) -> datetime:
+    """A stored (naive UTC) timestamp in the machine's local time zone, for human-readable text."""
+    return (value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value).astimezone()
 
 
 def _resolve_db_path() -> Path:
@@ -105,11 +129,11 @@ class Job(Base):
     progress = Column(Text, nullable=True)
     result = Column(Text, nullable=True)
     error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         nullable=False,
     )
     started_at = Column(DateTime, nullable=True)
@@ -123,7 +147,7 @@ class JobLog(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     job_id = Column(String(64), nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     message = Column(Text, nullable=False)
 
 
@@ -139,7 +163,7 @@ class JobMetric(Base):
     loss = Column(Float, nullable=True)
     learning_rate = Column(Float, nullable=True)
     vram_gb = Column(Float, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class ChatSession(Base):
@@ -153,8 +177,8 @@ class ChatSession(Base):
     system_prompt = Column(Text, nullable=True)
     params = Column(Text, nullable=True)  # JSON: temperature, top_p, ...
     use_kb = Column(Boolean, nullable=False, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
 
 class ChatMessage(Base):
@@ -167,7 +191,7 @@ class ChatMessage(Base):
     role = Column(String(16), nullable=False)
     content = Column(Text, nullable=False)
     sources = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class KbDocument(Base):
@@ -180,7 +204,7 @@ class KbDocument(Base):
     ext = Column(String(16), nullable=False)
     size_bytes = Column(Integer, nullable=False, default=0)
     num_chunks = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class KbChunk(Base):
@@ -193,6 +217,36 @@ class KbChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     text = Column(Text, nullable=False)
     embedding = Column(LargeBinary, nullable=False)
+
+
+class CloudRun(Base):
+    """A fine-tune running on a remote GPU. Persisted so a restart can find and terminate leftovers."""
+
+    __tablename__ = "cloud_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(64), unique=True, nullable=False, index=True)
+    provider = Column(String(32), nullable=False, index=True)
+    remote_id = Column(String(255), nullable=False)
+    status = Column(String(32), nullable=False, default="running", index=True)
+    handle = Column(Text, nullable=False)  # RemoteJobHandle JSON (no secrets)
+    error = Column(Text, nullable=True)
+    started_at = Column(DateTime, default=utcnow, nullable=False)
+    ended_at = Column(DateTime, nullable=True)
+
+
+class CloudModel(Base):
+    """A registered remote inference model (Together, RunPod serverless, Replicate, SSH tunnel)."""
+
+    __tablename__ = "cloud_models"
+
+    id = Column(String(255), primary_key=True)  # cloud:<provider>:<name>
+    provider = Column(String(32), nullable=False)
+    name = Column(String(255), nullable=False)
+    remote_model = Column(String(255), nullable=False)
+    base_url = Column(Text, nullable=True)
+    endpoint_id = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 def _migrate_legacy_training_jobs() -> None:

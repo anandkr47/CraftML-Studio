@@ -12,12 +12,12 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from core.config import settings
 from core.ml.compression.presets import GGUF_QUANTS
+from core.utils.subproc import NO_WINDOW, child_env, python_script_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -49,22 +49,22 @@ def setup_llama_cpp() -> Path:
         raise GgufError("git is required to download llama.cpp. Install git, or set LLAMA_CPP_DIR to an existing checkout.")
     dest = _tools_dir()
     dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(dest, ignore_errors=True)  # leftovers of an interrupted clone would block git
     result = subprocess.run(
-        ["git", "clone", "--depth", "1", LLAMA_CPP_REPO, str(dest)], capture_output=True, text=True
+        ["git", "clone", "--depth", "1", LLAMA_CPP_REPO, str(dest)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", **NO_WINDOW,
     )
     if result.returncode != 0:
+        shutil.rmtree(dest, ignore_errors=True)
         raise GgufError(f"Cloning llama.cpp failed: {result.stderr.strip()[-400:]}")
     return dest
 
 
 def tooling_status() -> Dict[str, Any]:
     directory = llama_cpp_dir()
-    try:
-        import llama_cpp  # noqa: F401
+    import importlib.util
 
-        has_bindings = True
-    except ImportError:
-        has_bindings = False
+    has_bindings = importlib.util.find_spec("llama_cpp") is not None  # without paying the import cost
     return {
         "converter": str(directory) if directory else None,
         "quantize_binary": _quantize_binary(directory),
@@ -84,13 +84,11 @@ def _quantize_binary(directory: Optional[Path]) -> Optional[str]:
     return None
 
 
-def _python() -> str:
-    # In a frozen desktop build sys.executable is the app itself, not an interpreter.
-    return (shutil.which("python3") or shutil.which("python") or sys.executable) if getattr(sys, "frozen", False) else sys.executable
-
-
 def _run(cmd, log: Optional[Callable[[str], None]]) -> None:
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+        env=child_env(), **NO_WINDOW,
+    )
     tail = []
     for line in proc.stdout:  # type: ignore[union-attr]
         line = line.rstrip()
@@ -145,7 +143,7 @@ def convert_to_gguf(
     convert_target = out if direct else out.with_name(out.stem + ".f16.gguf")
 
     _run(
-        [_python(), str(directory / CONVERT_SCRIPT), model_dir, "--outfile", str(convert_target),
+        [*python_script_cmd(str(directory / CONVERT_SCRIPT)), model_dir, "--outfile", str(convert_target),
          "--outtype", direct or "f16"],
         log,
     )

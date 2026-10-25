@@ -3,6 +3,7 @@
  */
 
 import { API_BASE } from '../config';
+import { jsonOrThrow } from './errors';
 
 export interface DatasetInfo {
   id: string;
@@ -24,6 +25,7 @@ export interface DatasetInfo {
 export type TrainingMethod = 'qlora' | 'lora' | 'full';
 
 export interface StartJobRequest {
+  cloud?: { provider: string; gpu_id?: string | null; max_runtime_minutes: number; ssh_profile?: string | null };
   model_name: string;
   dataset_path: string;
   training_method: TrainingMethod;
@@ -77,16 +79,7 @@ export interface MetricPoint {
   vram_gb: number | null;
 }
 
-async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const detail = body.detail;
-    throw new Error(
-      typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d) => d.msg).join('; ') : res.statusText
-    );
-  }
-  return res.json();
-}
+const json = <T>(res: Response): Promise<T> => jsonOrThrow<T>(res);
 
 const post = <T>(path: string, body?: unknown) =>
   fetch(`${API_BASE}${path}`, {

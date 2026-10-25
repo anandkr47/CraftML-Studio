@@ -3,6 +3,7 @@
  */
 
 import { API_BASE } from '../config';
+import { jsonOrThrow } from './errors';
 import type { ChatSource } from './chat';
 
 export interface KbDocument {
@@ -31,13 +32,7 @@ export interface UploadResult {
   errors: { file: string; error: string }[];
 }
 
-async function parse<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || res.statusText);
-  }
-  return res.json();
-}
+const parse = <T>(res: Response): Promise<T> => jsonOrThrow<T>(res);
 
 export const kbApi = {
   list: () => fetch(`${API_BASE}/api/kb/documents`).then((r) => parse<KbListing>(r)),

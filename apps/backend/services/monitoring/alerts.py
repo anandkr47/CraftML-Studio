@@ -82,6 +82,10 @@ def check_context_fit(model_id: str, context_tokens: int, reading: Dict[str, Any
     info = inference.resolve_model(model_id)
     result: Dict[str, Any] = {"model_id": model_id, "context_tokens": context_tokens, "known": False}
 
+    if info.kind == "remote":
+        result["message"] = "Runs on the provider's hardware; local memory isn't used."
+        return result
+
     config: Optional[Dict[str, Any]] = None
     if info.kind == "full":
         try:

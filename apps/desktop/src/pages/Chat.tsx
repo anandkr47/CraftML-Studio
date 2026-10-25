@@ -21,6 +21,8 @@ import { Button } from '../components/ui/Button';
 import { MarkdownMessage } from '../components/chat/MarkdownMessage';
 import { DEFAULT_SETTINGS, chatApi } from '../api/chat';
 import { ContextCheck, contextCheck } from '../api/monitor';
+import { AddCloudModel } from '../components/cloud/AddCloudModel';
+import { errorText } from '../api/errors';
 import { useChatStore } from '../store/chatStore';
 import { useNotificationStore } from '../store/notificationStore';
 
@@ -44,7 +46,7 @@ const Chat: React.FC = () => {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    chat.init().catch((e) => showError(`Failed to load chat: ${e.message}`));
+    chat.init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -84,7 +86,7 @@ const Chat: React.FC = () => {
       await chat.refreshModels();
       showSuccess(selectedModel.is_loaded ? 'Model unloaded' : 'Model loaded');
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     } finally {
       setBusyModel(false);
     }
@@ -99,7 +101,7 @@ const Chat: React.FC = () => {
       setDownloadRepo('');
       setDownloadFile('');
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     } finally {
       setDownloading(false);
     }
@@ -108,9 +110,10 @@ const Chat: React.FC = () => {
   const exportChat = async (format: 'json' | 'markdown') => {
     if (!activeSession) return;
     try {
-      await chatApi.exportSession(activeSession.id, format, activeSession.title);
+      const where = await chatApi.exportSession(activeSession.id, format, activeSession.title);
+      showSuccess('Chat exported', `Saved to ${where}`);
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     }
   };
 
@@ -251,11 +254,11 @@ const Chat: React.FC = () => {
             <option value="">Select a model…</option>
             {chat.models.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name} ({m.kind}{m.is_loaded ? ', loaded' : ''})
+                {m.kind === 'remote' ? `☁ ${m.name.replace(' (cloud)', '')}` : `${m.name} (${m.kind}${m.is_loaded ? ', loaded' : ''})`}
               </option>
             ))}
           </select>
-          {selectedModel && (
+          {selectedModel && selectedModel.kind !== 'remote' && (
             <Button
               variant="outline"
               size="sm"
@@ -288,6 +291,13 @@ const Chat: React.FC = () => {
               Download
             </Button>
             {downloading && <p className="text-xs text-neutral-500">Downloading… large models can take a while.</p>}
+          </div>
+        </details>
+
+        <details className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-3">
+          <summary className="cursor-pointer text-xs font-semibold uppercase text-neutral-500">Add a cloud model</summary>
+          <div className="mt-2">
+            <AddCloudModel onAdded={() => chat.refreshModels()} />
           </div>
         </details>
 

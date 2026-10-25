@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from db.models import ChatMessage, ChatSession, SessionLocal
+from db.models import ChatMessage, ChatSession, SessionLocal, iso_utc, utcnow
 
 DEFAULT_PARAMS = {
     "temperature": 0.7,
@@ -25,7 +25,7 @@ def _loads(value: Optional[str]) -> Any:
 
 
 def _iso(value: Optional[datetime]) -> Optional[str]:
-    return value.isoformat() if value else None
+    return iso_utc(value)
 
 
 def _session_dict(row: ChatSession) -> Dict[str, Any]:
@@ -73,7 +73,7 @@ def update_session(session_id: str, **fields: Any) -> Optional[Dict[str, Any]]:
         if not row:
             return None
         _apply(row, fields)
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utcnow()
         db.commit()
         return _session_dict(row)
 
@@ -120,7 +120,7 @@ def add_message(
         db.add(msg)
         session = db.get(ChatSession, session_id)
         if session:
-            session.updated_at = datetime.utcnow()
+            session.updated_at = utcnow()
             if role == "user" and session.title == "New chat":
                 session.title = content.strip().replace("\n", " ")[:60] or "New chat"
         db.commit()

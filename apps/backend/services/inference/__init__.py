@@ -2,6 +2,7 @@
 
 from .engine import (
     chat,
+    configure_remote,
     discover_models,
     is_loaded,
     load_model,
@@ -19,6 +20,7 @@ __all__ = [
     "ModelInfo",
     "Usage",
     "chat",
+    "configure_remote",
     "discover_models",
     "is_loaded",
     "load_model",

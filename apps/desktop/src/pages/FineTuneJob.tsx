@@ -13,6 +13,8 @@ import { Badge } from '../components/ui/Badge';
 import { LineChart } from '../components/charts/LineChart';
 import { JobStatus, MetricPoint, finetuneApi } from '../api/finetune';
 import { useNotificationStore } from '../store/notificationStore';
+import { ActiveRun, cloudApi, money } from '../api/cloud';
+import { HttpError, errorText } from '../api/errors';
 
 const POLL_MS = 2000;
 const ACTIVE = ['pending', 'running'];
@@ -33,40 +35,86 @@ const FineTuneJob: React.FC = () => {
   const [points, setPoints] = useState<MetricPoint[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [notFound, setNotFound] = useState(false);
+  const [run, setRun] = useState<ActiveRun | null>(null);
+  const [connectionIssue, setConnectionIssue] = useState(false);
   const lastStep = useRef(-1);
   const logOffset = useRef(0);
   const logEnd = useRef<HTMLDivElement>(null);
 
-  const poll = useCallback(async () => {
+  /** One fetch of status + new metrics + new logs. Throws on failure (the loop decides what to do). */
+  const poll = useCallback(async (): Promise<boolean> => {
     if (!jobId) return false;
-    try {
-      const [status, newPoints, newLogs] = await Promise.all([
-        finetuneApi.jobStatus(jobId),
-        finetuneApi.jobMetrics(jobId, lastStep.current),
-        finetuneApi.jobLogs(jobId, logOffset.current),
-      ]);
-      setJob(status);
-      if (newPoints.length) {
-        lastStep.current = newPoints[newPoints.length - 1].step;
-        setPoints((prev) => [...prev, ...newPoints]);
-      }
-      if (newLogs.logs.length) {
-        logOffset.current += newLogs.logs.length;
-        setLogs((prev) => [...prev, ...newLogs.logs]);
-      }
-      return ACTIVE.includes(status.status);
-    } catch (e) {
-      if ((e as Error).message.includes('not found')) setNotFound(true);
-      return false;
+    const [status, newPoints, newLogs] = await Promise.all([
+      finetuneApi.jobStatus(jobId),
+      finetuneApi.jobMetrics(jobId, lastStep.current),
+      finetuneApi.jobLogs(jobId, logOffset.current),
+    ]);
+    setJob(status);
+    if (status.params?.cloud) {
+      cloudApi.runs().then((runs) => setRun(runs.find((r) => r.job_id === jobId) ?? null)).catch(() => undefined);
     }
+    if (newPoints.length) {
+      lastStep.current = newPoints[newPoints.length - 1].step;
+      setPoints((prev) => [...prev, ...newPoints]);
+    }
+    if (newLogs.logs.length) {
+      logOffset.current += newLogs.logs.length;
+      setLogs((prev) => [...prev, ...newLogs.logs]);
+    }
+    return ACTIVE.includes(status.status);
   }, [jobId]);
 
+  // Polling loop: one request at a time, backoff on errors, one last fetch after the job ends
+  // (so logs written as it finishes aren't missed), and an immediate tick on demand (`wake`).
+  const wake = useRef<() => void>(() => undefined);
   useEffect(() => {
     let timer: number | undefined;
     let cancelled = false;
+    let inFlight = false;
+    let failures = 0;
+    let finalFetchDone = false;
+
+    // a different job: start from scratch
+    lastStep.current = -1;
+    logOffset.current = 0;
+    setPoints([]);
+    setLogs([]);
+    setJob(null);
+    setNotFound(false);
+
     const tick = async () => {
-      const keepGoing = await poll();
-      if (!cancelled && keepGoing) timer = window.setTimeout(tick, POLL_MS);
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      let delay = POLL_MS;
+      try {
+        const active = await poll();
+        failures = 0;
+        setConnectionIssue(false);
+        if (!active) {
+          if (finalFetchDone) return;
+          finalFetchDone = true;
+          delay = 1000;
+        } else {
+          finalFetchDone = false;
+        }
+      } catch (e) {
+        if (e instanceof HttpError && e.status === 404) {
+          setNotFound(true);
+          return;
+        }
+        failures += 1;
+        setConnectionIssue(true);
+        delay = Math.min(30000, POLL_MS * 2 ** failures);
+      } finally {
+        inFlight = false;
+      }
+      if (!cancelled) timer = window.setTimeout(tick, delay);
+    };
+
+    wake.current = () => {
+      window.clearTimeout(timer);
+      finalFetchDone = false;
+      tick();
     };
     tick();
     return () => {
@@ -83,9 +131,9 @@ const FineTuneJob: React.FC = () => {
     try {
       await finetuneApi.stopJob(jobId!);
       showSuccess('Stopping…');
-      poll();
+      wake.current();
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     }
   };
 
@@ -94,7 +142,7 @@ const FineTuneJob: React.FC = () => {
       await finetuneApi.deleteJob(jobId!);
       navigate('/finetune');
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     }
   };
 
@@ -128,12 +176,21 @@ const FineTuneJob: React.FC = () => {
           <p className="text-sm text-neutral-500 mt-1">
             {jobId} · {job?.params?.training_method?.toUpperCase()}
           </p>
+          {job?.params?.cloud && (
+            <p className="text-sm mt-1 text-brand-700 dark:text-brand-300">
+              Remote: {job.params.cloud.provider}
+              {run?.gpu ? ` · ${run.gpu}` : job.params.cloud.gpu_id ? ` · ${job.params.cloud.gpu_id}` : ''}
+              {run?.price_per_hour != null && ` · ${money(run.price_per_hour)}/h`}
+              {run?.estimated_cost != null && ` · ≈ ${money(run.estimated_cost)} so far (estimate)`}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={status === 'completed' ? 'success' : status === 'failed' ? 'error' : 'default'}>{status}</Badge>
           {active ? (
-            <Button variant="danger" size="sm" onClick={stop} leftIcon={<Square className="w-4 h-4" />}>
-              Stop
+            <Button variant="danger" size="sm" onClick={stop} leftIcon={<Square className="w-4 h-4" />}
+              title={job?.params?.cloud ? 'Stops the job and terminates the remote machine' : undefined}>
+              {job?.params?.cloud ? 'Stop & terminate' : 'Stop'}
             </Button>
           ) : (
             <Button variant="outline" size="sm" onClick={remove} leftIcon={<Trash2 className="w-4 h-4" />}>
@@ -143,6 +200,11 @@ const FineTuneJob: React.FC = () => {
         </div>
       </div>
 
+      {connectionIssue && (
+        <div className="rounded-lg bg-warning-50 dark:bg-warning-900/20 px-4 py-2 text-sm text-warning-800 dark:text-warning-300">
+          Can&apos;t reach the backend right now; retrying… (the job keeps running)
+        </div>
+      )}
       {job?.error && (
         <div className="rounded-lg bg-error-50 dark:bg-error-900/20 px-4 py-3 text-sm text-error-700 dark:text-error-300">
           {job.error}

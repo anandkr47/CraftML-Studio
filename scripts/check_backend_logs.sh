@@ -2,7 +2,12 @@
 # Quick script to check backend logs
 # Usage: ./scripts/check_backend_logs.sh
 
-LOG_DIR="${TMPDIR:-/tmp}/craftml-studio/logs"
+# Where the desktop app writes the backend's output (Tauri's per-user log directory)
+if [ "$(uname -s)" = "Darwin" ]; then
+    LOG_DIR="$HOME/Library/Logs/com.craftml.studio"
+else
+    LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/com.craftml.studio/logs"
+fi
 STDOUT_LOG="$LOG_DIR/backend-stdout.log"
 STDERR_LOG="$LOG_DIR/backend-stderr.log"
 

@@ -2,7 +2,9 @@
 Chat Studio API: persisted sessions, model management, and streamed replies.
 """
 
-import json
+import logging
+import re
+from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -13,6 +15,7 @@ from api.openai_compat import chunk_payload, sse
 from services import chat_store, inference, rag
 from services.inference import GenerationParams, InferenceError, Usage
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 KB_TOP_K = 4
@@ -137,6 +140,36 @@ def export_session(session_id: str, format: str = "json"):
     )
 
 
+def _downloads_dir() -> Path:
+    """The user's Downloads folder on macOS/Windows/Linux (XDG), falling back to home."""
+    import os
+
+    xdg = os.environ.get("XDG_DOWNLOAD_DIR")
+    candidates = [Path(xdg)] if xdg else []
+    candidates.append(Path.home() / "Downloads")
+    return next((c for c in candidates if c.is_dir()), Path.home())
+
+
+@router.post("/sessions/{session_id}/export/save")
+def save_export(session_id: str, format: str = "markdown"):
+    """Write the export to the Downloads folder (never overwriting) and return the path."""
+    if format not in ("json", "markdown"):
+        raise HTTPException(status_code=400, detail="format must be 'json' or 'markdown'")
+    body = chat_store.export_session(session_id, format)
+    if body is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = chat_store.get_session(session_id) or {}
+    stem = re.sub(r"[^\w-]+", "_", session.get("title") or "chat").strip("_")[:60] or "chat"
+    ext = "md" if format == "markdown" else "json"
+    target = _downloads_dir() / f"{stem}.{ext}"
+    counter = 1
+    while target.exists():
+        target = target.with_name(f"{stem} ({counter}).{ext}")
+        counter += 1
+    target.write_text(body, encoding="utf-8")
+    return {"path": str(target)}
+
+
 # ---------------------------------------------------------------------------
 # Streaming reply
 # ---------------------------------------------------------------------------
@@ -211,6 +244,9 @@ def send_message(session_id: str, body: SendMessage):
             })
         except InferenceError as exc:
             yield sse({"object": "craftml.error", "message": str(exc)})
+        except Exception as exc:  # noqa: BLE001 - e.g. out of memory mid-generation; tell the client
+            logger.exception("Generation failed for session %s", session_id)
+            yield sse({"object": "craftml.error", "message": f"Generation failed: {exc}"})
         finally:
             if saved is None and reply.strip():  # client stopped early or an error mid-stream
                 chat_store.add_message(session_id, "assistant", reply, sources)

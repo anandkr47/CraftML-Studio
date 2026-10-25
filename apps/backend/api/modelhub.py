@@ -3,15 +3,16 @@ Model Hub API Routes
 Handles model search, download, and management from HuggingFace
 """
 
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from huggingface_hub import HfApi, hf_hub_download, snapshot_download, list_models
-from typing import Optional, List
+from huggingface_hub import HfApi, hf_hub_download, snapshot_download
+from typing import Optional
 import logging
 
 from core.config import settings
-from models.requests import ModelSearchRequest, ModelDownloadRequest
+from models.requests import ModelDownloadRequest
 from models.responses import ModelsSearchResponse, ModelInfo, LocalModelsResponse, LocalModelInfo
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,37 @@ router = APIRouter()
 
 # HuggingFace API client
 hf_api = HfApi()
+
+# owner/name (or a bare name); the Hub allows letters, digits, '-', '_' and '.'
+REPO_ID = re.compile(r"^[A-Za-z0-9][\w.-]*(/[A-Za-z0-9][\w.-]*)?$")
+
+
+def _models_dir() -> Path:
+    path = Path(settings.models_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _local_model_path(model_name: str) -> Path:
+    """``<models dir>/<model_name>``, refusing anything that would point elsewhere (``..``, separators)."""
+    root = _models_dir().resolve()
+    candidate = (root / model_name).resolve()
+    if model_name in ("", ".", "..") or "/" in model_name or "\\" in model_name or candidate.parent != root:
+        raise HTTPException(status_code=400, detail=f"Invalid model name '{model_name}'")
+    return candidate
+
+
+def _hub_error(exc: Exception, repo: str) -> HTTPException:
+    """Map Hugging Face Hub errors to useful HTTP statuses."""
+    from huggingface_hub.errors import EntryNotFoundError, GatedRepoError, RepositoryNotFoundError, RevisionNotFoundError
+
+    if isinstance(exc, GatedRepoError):
+        return HTTPException(status_code=403, detail=f"{repo} is gated: accept its license on huggingface.co and save a token in Settings.")
+    if isinstance(exc, RepositoryNotFoundError):
+        return HTTPException(status_code=404, detail=f"{repo} was not found on Hugging Face (or it is private and needs a token).")
+    if isinstance(exc, (RevisionNotFoundError, EntryNotFoundError)):
+        return HTTPException(status_code=404, detail=f"{exc}")
+    return HTTPException(status_code=502, detail=f"Download failed: {exc}")
 
 
 @router.get("/search", response_model=ModelsSearchResponse)
@@ -69,35 +101,10 @@ def search_models(query: str, limit: int = 20, filter_tags: Optional[str] = None
 
 
 def get_hf_token() -> Optional[str]:
-    """
-    Get stored HuggingFace token if available
-    
-    Returns:
-        Decrypted token or None
-    """
-    try:
-        from pathlib import Path
-        token_file = Path.home() / ".craftml" / "settings" / "hf_token.enc"
-        
-        if not token_file.exists():
-            return None
-        
-        # Import encryption key and decrypt
-        key_file = Path.home() / ".craftml" / "settings" / ".key"
-        if not key_file.exists():
-            return None
-        
-        from cryptography.fernet import Fernet
-        key = key_file.read_bytes()
-        cipher = Fernet(key)
-        
-        encrypted_token = token_file.read_bytes()
-        token = cipher.decrypt(encrypted_token).decode()
-        
-        return token
-    except Exception as e:
-        logger.error(f"Failed to retrieve HF token: {e}")
-        return None
+    """Saved Hugging Face token (from the encrypted secret store), if any."""
+    from services.hf_auth import get_hf_token as _get
+
+    return _get()
 
 
 @router.post("/download")
@@ -108,11 +115,12 @@ def download_model(request: ModelDownloadRequest):
     Runs in the threadpool (this is a plain ``def``) so a long download doesn't block the
     server.  With ``filename`` only that file is fetched, which is what you want for GGUF repos.
     """
+    if not REPO_ID.match(request.model_name) or ".." in request.model_name:
+        raise HTTPException(status_code=400, detail=f"'{request.model_name}' is not a Hugging Face model id (owner/name)")
+    if request.filename and (".." in Path(request.filename).parts or Path(request.filename).is_absolute()):
+        raise HTTPException(status_code=400, detail=f"Invalid file name '{request.filename}'")
     try:
-        models_dir = Path(settings.models_dir)
-        models_dir.mkdir(parents=True, exist_ok=True)
-
-        output_path = models_dir / request.model_name.replace('/', '_')
+        output_path = _local_model_path(request.model_name.replace('/', '_'))
         logger.info(f"Downloading {request.model_name} ({request.filename or 'full repo'}) to {output_path}")
 
         hf_token = get_hf_token()
@@ -141,9 +149,11 @@ def download_model(request: ModelDownloadRequest):
             "size_mb": round(size_mb, 2),
             "message": "Model downloaded successfully",
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Model download failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+        raise _hub_error(e, request.model_name)
 
 
 @router.get("/local", response_model=LocalModelsResponse)
@@ -155,13 +165,12 @@ async def list_local_models():
         List of local models
     """
     try:
-        models_dir = Path(settings.models_dir)
-        models_dir.mkdir(parents=True, exist_ok=True)
-        
         local_models = []
-        
-        # Scan models directory
-        for model_dir in models_dir.iterdir():
+
+        # Scan models directory (skipping in-progress work directories such as .tmp-<job>)
+        for model_dir in _models_dir().iterdir():
+            if model_dir.name.startswith("."):
+                continue
             if model_dir.is_dir():
                 # Get model size
                 size_bytes = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
@@ -203,12 +212,10 @@ async def delete_local_model(model_name: str):
         Deletion confirmation
     """
     try:
-        models_dir = Path(settings.models_dir)
-        model_path = models_dir / model_name
-        
-        if not model_path.exists():
+        model_path = _local_model_path(model_name)
+        if not model_path.is_dir():
             raise HTTPException(status_code=404, detail=f"Model {model_name} not found")
-        
+
         # Delete model directory
         import shutil
         shutil.rmtree(model_path)
@@ -239,12 +246,10 @@ async def get_local_model_info(model_name: str):
         Model metadata
     """
     try:
-        models_dir = Path(settings.models_dir)
-        model_path = models_dir / model_name
-        
-        if not model_path.exists():
+        model_path = _local_model_path(model_name)
+        if not model_path.is_dir():
             raise HTTPException(status_code=404, detail=f"Model {model_name} not found")
-        
+
         # Get model size
         size_bytes = sum(f.stat().st_size for f in model_path.rglob('*') if f.is_file())
         size_mb = size_bytes / (1024 ** 2)

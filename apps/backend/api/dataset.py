@@ -7,7 +7,7 @@ Datasets are plain files under the user's datasets directory; the id is the file
 import re
 import shutil
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -42,7 +42,7 @@ def _summary(path: Path) -> Dict[str, Any]:
         "path": str(path),
         "extension": path.suffix.lstrip("."),
         "size_mb": round(stat.st_size / (1024 ** 2), 3),
-        "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        "created_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
     }
 
 
@@ -67,8 +67,11 @@ def upload_dataset(file: UploadFile = File(...)):
     try:
         info = inspect_dataset(str(path))
     except DatasetFormatError as exc:
-        path.unlink()
+        path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 - never leave an unreadable upload behind
+        path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=f"Could not read {file.filename}: {exc}")
     return {**_summary(path), **info}
 
 

@@ -21,6 +21,7 @@ import {
 } from '../api/deployment';
 import type { DeploymentInfo, ServerStatus } from '../api/deployment';
 import { useNotificationStore } from '../store/notificationStore';
+import { errorText } from '../api/errors';
 
 const fieldClass =
   'w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm';
@@ -77,7 +78,7 @@ const DeploymentConsole: React.FC = () => {
       setServer(s);
       setHistory(h);
     } catch (e) {
-      showError(`Failed to load deployment data: ${(e as Error).message}`);
+      showError(`Failed to load deployment data: ${errorText(e)}`);
     }
   }, [showError]);
 
@@ -98,7 +99,7 @@ const DeploymentConsole: React.FC = () => {
       setServerDeploymentId(result.deployment_id);
       showSuccess('API server started', result.base_url);
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     } finally {
       setStarting(false);
       refresh();
@@ -113,7 +114,7 @@ const DeploymentConsole: React.FC = () => {
       setServerDeploymentId(null);
       showSuccess('API server stopped');
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     } finally {
       refresh();
     }
@@ -143,16 +144,17 @@ const DeploymentConsole: React.FC = () => {
         }
       }, 2000);
     } catch (e) {
-      showError((e as Error).message);
+      showError(errorText(e));
     }
   };
 
   const base = server?.base_url ?? '';
-  const sampleModel = server?.model_id ?? serverModel ?? 'MODEL_ID';
+  const sampleModel = server?.model_id || serverModel || 'MODEL_ID';
   const keyHeader = server?.auth_required ? ` \\\n  -H "Authorization: Bearer YOUR_KEY"` : '';
   const curl = `curl ${base}/chat/completions \\\n  -H "Content-Type: application/json"${keyHeader} \\\n  -d '{"model": "${sampleModel}", "messages": [{"role": "user", "content": "Hello"}]}'`;
   const python = `from openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key="${server?.auth_required ? 'YOUR_KEY' : 'not-needed'}")\nreply = client.chat.completions.create(\n    model="${sampleModel}",\n    messages=[{"role": "user", "content": "Hello"}],\n)\nprint(reply.choices[0].message.content)`;
 
+  const portValid = Number.isInteger(port) && port >= 1024 && port <= 65535;
   const exporting = exportJob?.status === 'running' || exportJob?.status === 'pending';
   const hfReady = hfModel && /^[\w.-]+\/[\w.-]+$/.test(repoName.trim());
 
@@ -223,13 +225,14 @@ const DeploymentConsole: React.FC = () => {
                   Allow other devices on my network
                 </label>
               </div>
+              {!portValid && <p className="text-sm text-error-600">Port must be a whole number from 1024 to 65535.</p>}
               {allowLan && !apiKey && (
                 <p className="text-sm text-warning-600">An API key is required to expose the server to your network.</p>
               )}
               <Button
                 onClick={startServer}
                 isLoading={starting}
-                disabled={allowLan && !apiKey}
+                disabled={(allowLan && !apiKey) || !portValid}
                 leftIcon={<Play className="w-4 h-4" />}
               >
                 Start server
@@ -286,7 +289,7 @@ const DeploymentConsole: React.FC = () => {
               <label className={labelClass}>Model</label>
               <select className={fieldClass} value={hfModel} onChange={(e) => setHfModel(e.target.value)}>
                 <option value="">Select a local model…</option>
-                {models.map((m) => (
+                {models.filter((m) => m.kind !== 'remote').map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name} ({m.kind}, {m.size_mb} MB)
                   </option>
@@ -378,7 +381,7 @@ const DeploymentConsole: React.FC = () => {
                     <td>
                       <Badge variant={statusVariant(d.status)}>{d.status}</Badge>
                     </td>
-                    <td>{d.started_at ? new Date(d.started_at + 'Z').toLocaleString() : '—'}</td>
+                    <td>{d.started_at ? new Date(d.started_at).toLocaleString() : '—'}</td>
                     <td>{d.repo_url ? <a href={d.repo_url} target="_blank" rel="noreferrer" className="text-brand-600 underline">repo</a> : d.base_url ?? ''}</td>
                   </tr>
                 ))}
