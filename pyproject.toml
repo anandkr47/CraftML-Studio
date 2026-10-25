@@ -73,6 +73,7 @@ target-version = ['py311']
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = [".", "apps/backend"]   # core/ and the backend packages (services/, api/, db/)
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
