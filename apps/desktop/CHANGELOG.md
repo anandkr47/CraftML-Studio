@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.4](https://github.com/anandkr47/CraftML-Studio/compare/craftml-studio-v0.3.3...craftml-studio-v0.3.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* fix refractor overengineered ([3236641](https://github.com/anandkr47/CraftML-Studio/commit/323664190701193514c4e2adcad0b538ebbfb876))
+* fix the deployment and finetuning pipeline ([4110107](https://github.com/anandkr47/CraftML-Studio/commit/411010761ddbc14c4652010dd6c6e5d107c66819))
+* improve the build issue ([f528e9c](https://github.com/anandkr47/CraftML-Studio/commit/f528e9c51612a578a21a2522b94bc2fb205cf8a6))
+* improve the build issue ([eac38e7](https://github.com/anandkr47/CraftML-Studio/commit/eac38e7981bdba15a76407b7457c62d5bd81ef41))
+* improve the overall productivuty ([72df698](https://github.com/anandkr47/CraftML-Studio/commit/72df69818835dcf524b5f7406af20d902ca3001c))
+
 ## [0.3.3](https://github.com/anandmindfire/CraftML-Studio/compare/craftml-studio-v0.3.2...craftml-studio-v0.3.3) (2025-11-11)
 
 
