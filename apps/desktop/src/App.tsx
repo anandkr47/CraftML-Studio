@@ -1,27 +1,31 @@
-import { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import EnhancedDashboard from "./pages/EnhancedDashboard";
-import HardwareDetection from "./pages/HardwareDetection";
-import DatasetManager from "./pages/DatasetManager";
-import CrawlerManager from "./pages/CrawlerManager";
-import EnhancedTrainingConsole from "./pages/EnhancedTrainingConsole";
-import TrainingJobView from "./pages/TrainingJobView";
-import CompressionPlayground from "./pages/CompressionPlayground";
+import React, { useState, useEffect } from "react";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import Compress from "./pages/Compress";
 import DeploymentConsole from "./pages/DeploymentConsole";
-import Playground from "./pages/Playground";
+import Chat from "./pages/Chat";
+import FineTune from "./pages/FineTune";
+import FineTuneJob from "./pages/FineTuneJob";
+import KnowledgeBase from "./pages/KnowledgeBase";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Sidebar from "./layout/Sidebar";
+import { SystemMonitorBar } from "./components/SystemMonitorBar";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import Header from "./layout/Header";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { ToastContainer } from "./components/ui/Toast";
 import UpdatePrompt from "./components/UpdatePrompt";
 import LoadingScreen from "./components/LoadingScreen";
-import { invoke } from "@tauri-apps/api/core";
+import { useBackendReady } from "./api/backend";
+
+/** Resets the error boundary when the route changes, so navigating away recovers from a crash. */
+function RouteBoundary({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  return <ErrorBoundary key={location.pathname}>{children}</ErrorBoundary>;
+}
 
 function App() {
-  const [isBackendReady, setIsBackendReady] = useState(false);
-  const [isChecking, setIsChecking] = useState(true);
+  const { phase, retry } = useBackendReady();
   const [isWindowShown, setIsWindowShown] = useState(false);
 
   // Show window once React is ready to render
@@ -45,70 +49,13 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  useEffect(() => {
-    const checkBackendHealth = async () => {
-      let attempts = 0;
-      const maxAttempts = 150; // 30 seconds (150 * 200ms)
-
-      const check = async () => {
-        try {
-          // Check if backend process is running
-          const status = await invoke<string>("backend_status");
-          
-          if (status.includes("running")) {
-            // Try to ping health endpoint
-            try {
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 1000);
-              const response = await fetch("http://127.0.0.1:5000/api/health", {
-                method: "GET",
-                signal: controller.signal,
-              });
-              clearTimeout(timeoutId);
-              
-              if (response.ok) {
-                setIsBackendReady(true);
-                setIsChecking(false);
-                return;
-              }
-            } catch (error) {
-              // Backend not ready yet, continue checking
-            }
-          }
-
-          attempts++;
-          if (attempts < maxAttempts) {
-            setTimeout(check, 200); // Check every 200ms
-          } else {
-            // Timeout - show app anyway after 30 seconds
-            setIsBackendReady(true);
-            setIsChecking(false);
-          }
-        } catch (error) {
-          attempts++;
-          if (attempts < maxAttempts) {
-            setTimeout(check, 200);
-          } else {
-            setIsBackendReady(true);
-            setIsChecking(false);
-          }
-        }
-      };
-
-      // Start checking after a small delay
-      setTimeout(check, 500);
-    };
-
-    checkBackendHealth();
-  }, []);
-
   // Don't render anything until window is shown to avoid white flash
   if (!isWindowShown) {
     return null;
   }
 
-  if (isChecking || !isBackendReady) {
-    return <LoadingScreen />;
+  if (phase.kind !== 'ready') {
+    return <LoadingScreen phase={phase} onRetry={retry} />;
   }
 
   return (
@@ -119,20 +66,20 @@ function App() {
           <div className="flex-1 flex flex-col overflow-hidden">
             <Header />
             <main className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-neutral-900">
+              <RouteBoundary>
               <Routes>
-                <Route path="/" element={<EnhancedDashboard />} />
-                <Route path="/hardware" element={<HardwareDetection />} />
-                <Route path="/datasets" element={<DatasetManager />} />
-                <Route path="/crawler" element={<CrawlerManager />} />
-                <Route path="/train" element={<EnhancedTrainingConsole />} />
-                <Route path="/train/job/:jobId" element={<TrainingJobView />} />
-                <Route path="/compress" element={<CompressionPlayground />} />
+                <Route path="/" element={<Chat />} />
+                <Route path="/kb" element={<KnowledgeBase />} />
+                <Route path="/finetune" element={<FineTune />} />
+                <Route path="/finetune/job/:jobId" element={<FineTuneJob />} />
+                <Route path="/compress" element={<Compress />} />
                 <Route path="/deploy" element={<DeploymentConsole />} />
-                <Route path="/playground" element={<Playground />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
+              </RouteBoundary>
             </main>
+            <SystemMonitorBar />
           </div>
         </div>
         <ToastContainer />

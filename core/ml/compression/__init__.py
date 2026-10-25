@@ -1,17 +1,17 @@
 """
 Model Compression Module
-Quantization, pruning, and distillation for model compression
+Quantization (INT8/INT4, GPTQ, AWQ, GGUF) and target-device presets
 """
 
-from core.ml.compression.quantization import quantize_model, ModelQuantizer
-from core.ml.compression.pruning import prune_model, ModelPruner
-from core.ml.compression.distillation import distill_model, KnowledgeDistiller
+from core.ml.compression.presets import GGUF_QUANTS, METHODS, PRESETS
+from core.ml.compression.quantization import ModelQuantizer, QuantizationError, merge_lora_adapter, quantize_model
 
 __all__ = [
-    'quantize_model',
+    'GGUF_QUANTS',
+    'METHODS',
+    'PRESETS',
     'ModelQuantizer',
-    'prune_model',
-    'ModelPruner',
-    'distill_model',
-    'KnowledgeDistiller'
+    'QuantizationError',
+    'merge_lora_adapter',
+    'quantize_model',
 ]

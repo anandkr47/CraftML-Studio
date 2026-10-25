@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { fetchBackendLogs, type BackendLogs, type BackendPhase } from "../api/backend";
 
 interface Feature {
   icon: string;
@@ -9,119 +9,70 @@ interface Feature {
 
 const features: Feature[] = [
   {
-    icon: "🚀",
-    title: "Model Training",
-    description: "Fine-tune LLMs with LoRA, QLoRA, and full fine-tuning on your local hardware"
+    icon: "💬",
+    title: "Chat Studio",
+    description: "Chat with local models, tune sampling parameters, and ground answers in your own documents"
   },
   {
     icon: "🧠",
-    title: "AI Playground",
-    description: "Test and interact with trained models in real-time with an intuitive interface"
-  },
-  {
-    icon: "📊",
-    title: "Dataset Management",
-    description: "Create, manage, and prepare datasets for training with advanced preprocessing"
-  },
-  {
-    icon: "🕷️",
-    title: "Web Crawler",
-    description: "Automatically collect and process web data for training datasets"
+    title: "Fine-Tune",
+    description: "No-code LoRA and QLoRA fine-tuning with live loss curves and automatic checkpoints"
   },
   {
     icon: "🗜️",
-    title: "Model Compression",
-    description: "Optimize model size with quantization and pruning techniques"
+    title: "Compress",
+    description: "Quantize models to GGUF, INT4/INT8, GPTQ or AWQ and compare size, quality and speed"
   },
   {
-    icon: "🚢",
-    title: "Deployment",
-    description: "Deploy your models to production with Docker and cloud integration"
+    icon: "📚",
+    title: "Knowledge Base",
+    description: "Drop in PDFs, Markdown, text and Word files — embedded and searched entirely on your machine"
   },
   {
-    icon: "📈",
-    title: "Job Monitoring",
-    description: "Track training progress, view logs, and manage multiple training jobs"
+    icon: "🚀",
+    title: "Deploy & Endpoints",
+    description: "Serve models through a local OpenAI-compatible API or publish them to Hugging Face"
   },
   {
-    icon: "⚡",
-    title: "Hardware Detection",
-    description: "Automatic GPU detection and optimization for maximum performance"
+    icon: "📊",
+    title: "System Monitor",
+    description: "Live CPU, RAM and GPU usage with alerts before you run out of memory"
   }
 ];
 
-export default function LoadingScreen() {
+interface LoadingScreenProps {
+  phase: Exclude<BackendPhase, { kind: "ready" }>;
+  onRetry: () => void;
+}
+
+export default function LoadingScreen({ phase, onRetry }: LoadingScreenProps) {
   const [currentFeatureIndex, setCurrentFeatureIndex] = useState(0);
   const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState("Initializing backend server...");
+  const [logs, setLogs] = useState<BackendLogs | null>(null);
+  const failed = phase.kind === "failed";
 
   useEffect(() => {
-    // Rotate through features every 2 seconds
+    if (failed) return;
+    // Rotate through features and ease the (indicative) progress bar towards 90%.
     const featureInterval = setInterval(() => {
       setCurrentFeatureIndex((prev) => (prev + 1) % features.length);
-    }, 2000);
-
-    // Progress simulation (smooth progress bar)
-    let progressValue = 0;
+    }, 2500);
     const progressInterval = setInterval(() => {
-      if (progressValue < 85) {
-        progressValue += 0.5;
-        setProgress(progressValue);
-      }
-    }, 100);
-
-    // Check backend status
-    const checkBackend = async () => {
-      try {
-        const backendStatus = await invoke<string>("backend_status");
-        
-        if (backendStatus.includes("not running")) {
-          setStatus("Launching backend process...");
-          setProgress(10);
-        } else if (backendStatus.includes("running")) {
-          setStatus("Starting API server...");
-          setProgress(60);
-          
-          // Try to ping health endpoint
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 1000);
-            const response = await fetch("http://127.0.0.1:5000/api/health", {
-              method: "GET",
-              signal: controller.signal,
-            });
-            clearTimeout(timeoutId);
-            
-            if (response.ok) {
-              setProgress(100);
-              setStatus("Backend ready!");
-              clearInterval(featureInterval);
-              clearInterval(progressInterval);
-            } else {
-              setStatus("Initializing API endpoints...");
-              setProgress(75);
-            }
-          } catch {
-            // Backend not ready yet
-            setStatus("Waiting for API server...");
-            setProgress(70);
-          }
-        } else {
-          setStatus("Initializing...");
-        }
-      } catch (error) {
-        setStatus("Starting up...");
-      }
-    };
-
-    const statusInterval = setInterval(checkBackend, 500);
-
+      setProgress((p) => (p < 90 ? p + (90 - p) * 0.03 : p));
+    }, 150);
     return () => {
       clearInterval(featureInterval);
       clearInterval(progressInterval);
-      clearInterval(statusInterval);
     };
-  }, []);
+  }, [failed]);
+
+  useEffect(() => {
+    if (failed) fetchBackendLogs().then(setLogs);
+    else setLogs(null);
+  }, [failed]);
+
+  const status = failed ? "The backend could not start" : phase.detail;
+  const logTail = logs ? (logs.stderr.trim() || logs.stdout.trim()).split("\n").slice(-40).join("\n") : "";
 
   const currentFeature = features[currentFeatureIndex];
 
@@ -148,14 +99,15 @@ export default function LoadingScreen() {
           <div className="text-center mb-8">
             <div className="inline-flex items-center gap-3 px-4 py-2 bg-neutral-700/50 rounded-full">
               <div className="relative">
-                <div className="w-3 h-3 bg-blue-500 rounded-full animate-ping absolute" />
-                <div className="w-3 h-3 bg-blue-500 rounded-full relative" />
+                {!failed && <div className="w-3 h-3 bg-blue-500 rounded-full animate-ping absolute" />}
+                <div className={`w-3 h-3 rounded-full relative ${failed ? "bg-red-500" : "bg-blue-500"}`} />
               </div>
               <span className="text-neutral-200 text-sm font-medium">{status}</span>
             </div>
           </div>
 
           {/* Progress Bar */}
+          {!failed && (
           <div className="mb-8">
             <div className="h-2 bg-neutral-700 rounded-full overflow-hidden">
               <div
@@ -170,8 +122,28 @@ export default function LoadingScreen() {
               <span>{Math.round(progress)}%</span>
             </div>
           </div>
+          )}
+
+          {failed && (
+            <div className="bg-red-950/40 rounded-xl p-6 border border-red-800/50 text-left">
+              <p className="text-red-200 text-sm mb-4 whitespace-pre-wrap">{phase.error}</p>
+              {logTail && (
+                <pre className="max-h-56 overflow-auto text-xs text-neutral-300 bg-neutral-950/70 rounded-lg p-3 mb-4 whitespace-pre-wrap">
+                  {logTail}
+                </pre>
+              )}
+              {logs && <p className="text-neutral-400 text-xs mb-4 break-all">Logs: {logs.log_dir}</p>}
+              <button
+                onClick={onRetry}
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium"
+              >
+                Retry
+              </button>
+            </div>
+          )}
 
           {/* Feature Showcase */}
+          {!failed && (
           <div className="bg-neutral-900/50 rounded-xl p-6 border border-neutral-700/30">
             <div
               key={currentFeatureIndex}
@@ -200,6 +172,7 @@ export default function LoadingScreen() {
               ))}
             </div>
           </div>
+          )}
         </div>
 
         {/* Footer */}

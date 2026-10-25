@@ -1,209 +1,162 @@
 """
 Deployment Service
-Handles model deployment using core ML modules
+  * local: start/stop the OpenAI-compatible API server (services/api_server.py)
+  * huggingface: export a local model + generated model card to the Hub
+
+Both are recorded as ``deploy`` jobs in the unified job store.
 """
 
-import sys
+import json
 from pathlib import Path
-import uuid
-import logging
-from typing import Dict, Any
-from datetime import datetime
-import multiprocessing
+from typing import Any, Dict, Optional
 
-# Add core to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-
-from core.ml.deployment import deploy_local, deploy_to_huggingface
-from core.utils import setup_logger
 from core.config import settings
+from core.ml.deployment import build_model_card, deploy_to_huggingface
+from core.utils import setup_logger
+from services import api_server, inference, jobs
+from services.inference import ModelInfo
 
 logger = setup_logger("deployment_service", log_file=str(settings.logs_dir / "deployment_service.log"))
 
-# In-memory deployment storage
-active_deployments: Dict[str, Dict[str, Any]] = {}
-deployment_processes: Dict[str, multiprocessing.Process] = {}
+JOB_TYPE = "deploy"
+SECRET_PARAMS = ("hf_token", "api_key")
 
 
-def start_deployment(params: Dict[str, Any]) -> str:
-    """
-    Start a new deployment
-    
-    Args:
-        params: Deployment parameters including:
-            - type: Deployment type (local, huggingface, docker)
-            - model_path: Path to model
-            - port: Port for local deployment (optional)
-            - repo_name: HuggingFace repo name (optional)
-            - hf_token: HuggingFace token (optional)
-            
-    Returns:
-        deployment_id: Unique deployment identifier
-    """
-    deployment_id = f"deploy_{uuid.uuid4().hex[:8]}"
-    deployment_type = params.get("type", "local")
-    
-    logger.info(f"Starting {deployment_type} deployment {deployment_id}")
-    
-    # Store deployment info
-    active_deployments[deployment_id] = {
-        "deployment_id": deployment_id,
-        "type": deployment_type,
-        "status": "pending",
-        "params": params,
-        "started_at": datetime.now().isoformat()
+def _view(job: Dict[str, Any]) -> Dict[str, Any]:
+    """Shape a job record as a deployment record."""
+    result = job["result"] or {}
+    return {
+        "deployment_id": job["job_id"],
+        "type": job["params"].get("type"),
+        "status": job["status"],
+        "started_at": job["started_at"] or job["created_at"],
+        "completed_at": job["completed_at"],
+        "model_id": job["params"].get("model_id"),
+        "params": job["params"],
+        "error": job["error"],
+        "result": result,
+        "url": result.get("url"),
+        "base_url": result.get("base_url"),
+        "endpoints": result.get("endpoints", {}),
+        "repo_url": result.get("repo_url") or (result.get("url") if job["params"].get("type") == "huggingface" else None),
     }
-    
+
+
+def _model_card_context(info: ModelInfo) -> Dict[str, Any]:
+    """Base model and training details for a model card, from the fine-tune job that produced it."""
+    base_model: Optional[str] = None
+    details: Dict[str, Any] = {}
+
+    job = jobs.get(info.id) if info.id.startswith("train_") else None
+    if job and job["job_type"] == "finetune":
+        params = job["params"]
+        cfg = params.get("training_config") or {}
+        lora = params.get("lora_config") or {}
+        base_model = params.get("model_name")
+        details = {
+            "Method": (params.get("training_method") or "qlora").upper(),
+            "Dataset": Path(params.get("dataset_path") or "").name or None,
+            "Epochs": cfg.get("num_epochs"),
+            "Learning rate": cfg.get("learning_rate"),
+            "Batch size": cfg.get("batch_size"),
+            "LoRA rank / alpha": f"{lora['r']} / {lora['lora_alpha']}" if lora.get("r") else None,
+            "Final loss": round(job["progress"]["loss"], 4) if (job["progress"] or {}).get("loss") else None,
+        }
+        details = {k: v for k, v in details.items() if v not in (None, "")}
+
+    if not base_model and info.kind == "lora":
+        try:
+            base_model = json.loads((Path(info.path) / "adapter_config.json").read_text()).get("base_model_name_or_path")
+        except (OSError, ValueError):
+            pass
+    return {"base_model": base_model, "training_details": details}
+
+
+def start_local(
+    model_id: Optional[str], port: int, api_key: Optional[str], allow_lan: bool
+) -> str:
+    """Start the local API server; returns the deployment id."""
+    params = {"type": "local", "model_id": model_id, "port": port, "allow_lan": allow_lan}
+    deployment_id = jobs.create(JOB_TYPE, params, status="running")
     try:
-        active_deployments[deployment_id]["status"] = "deploying"
-        
-        if deployment_type == "local":
-            # Local deployment
-            model_path = params.get("model_path")
-            port = params.get("port", 5001)
-            
-            if not model_path:
-                raise ValueError("model_path is required for local deployment")
-            
-            logger.info(f"Deploying model locally on port {port}")
-            
-            # Note: deploy_local() blocks, so we should run it in a separate process
-            # For now, just store the info
-            active_deployments[deployment_id]["status"] = "running"
-            active_deployments[deployment_id]["url"] = f"http://127.0.0.1:{port}"
-            active_deployments[deployment_id]["endpoints"] = {
-                "generate": f"http://127.0.0.1:{port}/generate",
-                "health": f"http://127.0.0.1:{port}/health"
-            }
-            
-        elif deployment_type == "huggingface":
-            # HuggingFace deployment
-            model_path = params.get("model_path")
-            repo_name = params.get("repo_name")
-            hf_token = params.get("hf_token")
-            private = params.get("private", False)
-            
-            if not model_path:
-                raise ValueError("model_path is required")
-            if not repo_name:
-                raise ValueError("repo_name is required")
-            
-            logger.info(f"Deploying to HuggingFace: {repo_name}")
-            
-            result = deploy_to_huggingface(
-                model_path=model_path,
-                repo_name=repo_name,
-                hf_token=hf_token,
-                private=private
-            )
-            
-            active_deployments[deployment_id]["status"] = "completed"
-            active_deployments[deployment_id]["completed_at"] = datetime.now().isoformat()
-            active_deployments[deployment_id]["result"] = result
-            
-        else:
-            raise ValueError(f"Unknown deployment type: {deployment_type}")
-        
-        logger.info(f"Deployment {deployment_id} started successfully")
-        
-    except Exception as e:
-        logger.error(f"Deployment {deployment_id} failed: {e}")
-        active_deployments[deployment_id]["status"] = "failed"
-        active_deployments[deployment_id]["error"] = str(e)
-    
+        info = api_server.start(port=port, api_key=api_key, allow_lan=allow_lan, model_id=model_id)
+    except Exception as exc:
+        jobs.update(deployment_id, status="failed", error=str(exc))
+        raise
+    jobs.update(deployment_id, result=info)
+    return deployment_id
+
+
+def start_huggingface(
+    model_id: str,
+    repo_name: str,
+    hf_token: Optional[str] = None,
+    private: bool = False,
+    description: Optional[str] = None,
+) -> str:
+    """Export a local model to the Hub on a background thread; returns the deployment id."""
+    info = inference.resolve_model(model_id)
+    if info.kind in ("hf", "remote"):
+        raise ValueError(f"'{model_id}' is not a local model")
+
+    deployment_id = jobs.create(
+        JOB_TYPE,
+        {"type": "huggingface", "model_id": model_id, "repo_name": repo_name, "private": private},
+    )
+
+    def run() -> Dict[str, Any]:
+        token = hf_token
+        if not token:
+            from services.hf_auth import get_hf_token
+
+            token = get_hf_token()
+
+        ctx = _model_card_context(info)
+        card = build_model_card(
+            repo_name=repo_name,
+            kind=info.kind,
+            base_model=ctx["base_model"],
+            description=description,
+            training_details=ctx["training_details"],
+            filename=Path(info.path).name if info.kind == "gguf" else None,
+        )
+        jobs.append_log(deployment_id, f"Uploading {info.path} to {repo_name}")
+        result = deploy_to_huggingface(
+            model_path=info.path, repo_name=repo_name, hf_token=token, private=private, model_card=card
+        )
+        if result.get("status") != "success":
+            raise RuntimeError(result.get("error", "Upload failed"))
+        result["repo_url"] = result["url"]
+        jobs.append_log(deployment_id, f"Published at {result['url']}")
+        return result
+
+    jobs.run_in_thread(deployment_id, run)
     return deployment_id
 
 
 def stop_deployment(deployment_id: str) -> bool:
-    """
-    Stop a running deployment
-    
-    Args:
-        deployment_id: Deployment identifier
-        
-    Returns:
-        True if stopped successfully
-    """
-    if deployment_id not in active_deployments:
-        logger.warning(f"Deployment {deployment_id} not found")
+    """Stop a running local server (no-op for finished jobs)."""
+    job = jobs.get(deployment_id)
+    if not job or job["job_type"] != JOB_TYPE:
         return False
-    
-    deployment = active_deployments[deployment_id]
-    deployment_type = deployment.get("type")
-    
-    logger.info(f"Stopping deployment {deployment_id} (type: {deployment_type})")
-    
-    if deployment_type == "local":
-        # Stop local server process
-        if deployment_id in deployment_processes:
-            process = deployment_processes[deployment_id]
-            process.terminate()
-            process.join(timeout=5)
-            del deployment_processes[deployment_id]
-    
-    deployment["status"] = "stopped"
-    deployment["stopped_at"] = datetime.now().isoformat()
-    
+    if job["status"] == "running" and job["params"].get("type") == "local":
+        api_server.stop()
+        jobs.update(deployment_id, status="stopped")
     return True
 
 
 def get_status(deployment_id: str) -> Dict[str, Any]:
-    """
-    Get deployment status
-    
-    Args:
-        deployment_id: Deployment identifier
-        
-    Returns:
-        Deployment status information
-    """
-    if deployment_id not in active_deployments:
-        return {
-            "deployment_id": deployment_id,
-            "status": "not_found",
-            "error": "Deployment not found"
-        }
-    
-    return active_deployments[deployment_id]
+    job = jobs.get(deployment_id)
+    if not job or job["job_type"] != JOB_TYPE:
+        return {"deployment_id": deployment_id, "status": "not_found", "error": "Deployment not found"}
+    return _view(job)
 
 
 def get_endpoints() -> Dict[str, Any]:
-    """
-    Get all active deployment endpoints
-    
-    Returns:
-        List of active endpoints
-    """
-    endpoints = []
-    
-    for deployment_id, deployment in active_deployments.items():
-        if deployment.get("status") == "running":
-            endpoints.append({
-                "deployment_id": deployment_id,
-                "type": deployment.get("type"),
-                "url": deployment.get("url"),
-                "endpoints": deployment.get("endpoints", {})
-            })
-    
-    return {"endpoints": endpoints}
+    """Live endpoint info for the running local server (if any)."""
+    live = api_server.status()
+    return {"endpoints": [live] if live else [], "server": live}
 
 
 def list_deployments() -> Dict[str, Any]:
-    """
-    List all deployments
-    
-    Returns:
-        List of deployments with summary information
-    """
-    deployments = []
-    
-    for deployment_id, deployment in active_deployments.items():
-        deployments.append({
-            "deployment_id": deployment_id,
-            "type": deployment.get("type"),
-            "status": deployment.get("status"),
-            "started_at": deployment.get("started_at"),
-            "url": deployment.get("url")
-        })
-    
-    return {"deployments": deployments}
+    return {"deployments": [_view(j) for j in jobs.list_jobs(job_type=JOB_TYPE, limit=1000)]}

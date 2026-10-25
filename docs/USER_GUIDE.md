@@ -1,339 +1,115 @@
-# CraftML Studio - User Guide
+# User guide
 
-## Getting Started
+CraftML Studio runs language models on your own computer. Everything stays on your machine unless you
+choose otherwise: downloading or publishing a model, chatting with a cloud model, or fine-tuning on a
+rented GPU.
 
-After installing and running CraftML Studio, you'll see the main dashboard with navigation to different features.
+When the app starts it launches its local engine. The first start after installing or updating
+unpacks it and can take a few minutes while your system checks the new files; later starts take
+seconds. If the engine can't start, the loading screen shows why, along with the end of the log
+and a **Retry** button.
 
-## Features Overview
+The status bar at the bottom shows live CPU, RAM, GPU and VRAM use, and warns you before memory runs
+out.
 
-### 1. Dashboard
-The main overview showing:
-- Active jobs (training, crawling, compression)
-- System resources (GPU, CPU, memory)
-- Recent activities
-- Quick actions
+## Getting a model
 
-### 2. Dataset Crawler
+* **Download:** go to **Deploy & Endpoints → Download a model**, enter a Hugging Face id (for
+  example `HuggingFaceTB/SmolLM2-360M-Instruct`) and, for GGUF repositories, the file name. Gated
+  models (Llama, Gemma) need a Hugging Face token: save one in **Settings**.
+* **Fine-tune** your own (below), or **compress** one you have (below).
 
-Create custom datasets by crawling the web.
+Models you download, train or compress appear everywhere: Chat, Compress, Deploy.
 
-**Steps:**
-1. Navigate to **Crawler** page
-2. Enter seed URLs (one per line)
-3. Configure settings:
-   - **Max Depth:** How many levels to crawl (1-5)
-   - **Max Pages:** Maximum pages to collect (10-1000)
-   - **Timeout:** Request timeout in seconds
-4. Click **Start Crawl**
-5. Monitor progress in real-time
-6. Preview collected data
-7. Save dataset in desired format
+## Chat
 
-**Example Use Cases:**
-- Collect documentation for RAG
-- Build domain-specific datasets
-- Gather training data from specific websites
+1. Pick a model at the top. Cloud models carry a cloud badge.
+2. Type a message. Replies stream in, with Markdown and highlighted, copyable code.
+3. **Parameters:** temperature, top-p, top-k, repetition penalty, max tokens and the system prompt.
+   They are saved with the conversation.
+4. Conversations are saved automatically and listed in **History**. Export one as Markdown or JSON;
+   the desktop app saves it to your Downloads folder.
 
-### 3. Dataset Manager
+If a model plus the context you ask for won't fit in memory, you're warned before you send. Instruct
+or chat models give the best results; base models (no chat template) are prompted with a plain
+`User:` / `Assistant:` format.
 
-View and manage your collected datasets.
+### Answering from your documents
 
-**Features:**
-- List all datasets
-- View dataset details
-- Preview content
-- Delete datasets
-- Export in different formats (JSONL, CSV, Text)
+Turn on **Ground with Knowledge Base** in a chat. The most relevant passages from your documents are
+given to the model, and the reply lists them under **Sources**.
 
-### 4. Model Training
+## Knowledge Base
 
-Fine-tune language models on your datasets.
+Drop PDF, Word (`.docx`), Markdown or text files onto the page. They are split into passages and
+indexed on your computer (the embedding model downloads once, about 130 MB). Use **Test retrieval**
+to see which passages a question finds, and delete documents you no longer need. Scanned PDFs
+without a text layer can't be read; run OCR first.
 
-**Steps:**
-1. Navigate to **Training Console**
-2. Select a base model:
-   - From Hugging Face Hub
-   - From local models
-3. Choose your dataset
-4. Configure training:
-   - **LoRA Settings:**
-     - Rank (r): 8, 16, 32 (higher = more parameters)
-     - Alpha: Usually 2x rank
-     - Dropout: 0.05-0.1
-   - **Training Settings:**
-     - Epochs: 1-10
-     - Batch Size: 1-8 (depends on GPU)
-     - Learning Rate: 1e-5 to 5e-4
-   - **Quantization:**
-     - 4-bit (QLoRA) - recommended
-     - 8-bit
-     - No quantization
-5. Click **Start Training**
-6. Monitor:
-   - Loss curve
-   - GPU usage
-   - Training logs
-7. Save trained model
+## Fine-Tune
 
-**Tips:**
-- Start with 4-bit quantization to save memory
-- Use smaller batch sizes if you run out of memory
-- Monitor loss - should decrease over time
+A four-step wizard:
 
-### 5. Model Compression
+1. **Base model:** a Hugging Face id or one of your local models. Small models (0.5–3B) are the
+   practical choice on a laptop.
+2. **Dataset:** upload JSONL, JSON, CSV, Parquet or TXT. The format is detected (instruction /
+   output, prompt / completion, chat messages, or plain text) and previewed; problems are listed
+   before you start.
+3. **Settings:** the method, and where to run it.
+   * **QLoRA · 4-bit** (NVIDIA GPU) uses the least memory.
+   * **LoRA · 8-bit** (NVIDIA GPU).
+   * **LoRA · standard precision** runs anywhere, including Apple Silicon and CPU.
+   * **Full fine-tuning** needs a lot of memory.
 
-Reduce model size for faster inference.
+   Epochs, learning rate, batch size, sequence length and checkpoint interval have sensible defaults.
+   *Where to run* is this computer or a cloud GPU (see [CLOUD.md](CLOUD.md)); cloud runs show an
+   estimated cost and a hard time limit before you start.
+4. **Review** and start.
 
-**Compression Methods:**
+The job page shows live loss, learning rate and VRAM charts, logs and checkpoints. **Stop** ends the
+run; for cloud runs it also shuts the remote machine down. The finished adapter appears in Chat.
 
-#### Quantization
-Convert model weights to lower precision.
+## Compress
 
-- **INT8:** ~2x smaller, minimal accuracy loss
-- **INT4:** ~4x smaller, slight accuracy loss
-- **GPTQ:** Advanced quantization with calibration
+Choose a model and a preset, or pick the method yourself:
 
-**Steps:**
-1. Select model to compress
-2. Choose quantization method
-3. Set output location
-4. Click **Compress**
-5. Compare original vs compressed size
+| Preset | What it does |
+|---|---|
+| Fit on 8 GB VRAM | INT4 (NVIDIA): a 7B model shrinks to about 4 GB |
+| Apple Silicon / CPU | GGUF Q4_K_M: the usual best balance for llama.cpp |
+| Edge device | GGUF Q3_K_M for phones, Raspberry Pi and other small devices |
+| Max quality | GGUF Q8_0: about half the size, almost no quality loss |
 
-#### Pruning
-Remove less important weights.
+The page recommends a preset for your hardware. GGUF needs llama.cpp's converter; the first time,
+**Set up llama.cpp** downloads it (Git is required). The result is a new model with a before/after
+report: file size, memory, perplexity (lower is better) and speed.
 
-- **Magnitude Pruning:** Remove smallest weights
-- **Structured Pruning:** Remove entire neurons/channels
+If llama.cpp can't run a particular architecture, the GGUF file is still created, but chatting with it
+shows an error message instead of loading it.
 
-**Steps:**
-1. Select model
-2. Choose pruning method
-3. Set sparsity level (e.g., 30% = remove 30% of weights)
-4. Click **Prune**
+## Deploy & Endpoints
 
-#### Knowledge Distillation
-Transfer knowledge to smaller model.
+* **Local API server:** serve any model at an OpenAI-compatible address on your machine
+  (`/v1/chat/completions`, `/v1/embeddings`, `/v1/models`), optionally protected with an API key.
+  The page shows ready-to-copy `curl` and Python examples. Use it from any OpenAI client by setting
+  the base URL.
+* **Export to Hugging Face:** publish a model or adapter to a repository (needs a token with write
+  access). A model card with usage instructions is generated.
 
-**Steps:**
-1. Select teacher model (large)
-2. Select student model (small)
-3. Provide training data
-4. Configure temperature and alpha
-5. Start distillation
+## Settings
 
-### 6. Model Deployment
-
-Deploy your models for inference.
-
-#### Local Deployment
-Run model as a local API server.
-
-**Steps:**
-1. Navigate to **Deployment Console**
-2. Select model
-3. Choose **Local Deployment**
-4. Set port (default: 5001)
-5. Click **Deploy**
-6. Test API at `http://127.0.0.1:5001/generate`
-
-**API Usage:**
-```bash
-curl -X POST http://127.0.0.1:5001/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Hello, how are you?",
-    "max_length": 100,
-    "temperature": 0.7
-  }'
-```
-
-#### Hugging Face Deployment
-Upload model to Hugging Face Hub.
-
-**Steps:**
-1. Get HuggingFace token from https://huggingface.co/settings/tokens
-2. Enter token in deployment settings
-3. Select model
-4. Choose repository name
-5. Set visibility (public/private)
-6. Click **Deploy to Hugging Face**
-7. Model will be available at `huggingface.co/{username}/{model-name}`
-
-### 7. Resource Monitoring
-
-Real-time monitoring of system resources.
-
-**Metrics:**
-- **GPU:** Utilization, memory, temperature
-- **CPU:** Usage per core, frequency
-- **Memory:** RAM usage, swap
-- **Disk:** Storage usage
-
-**Features:**
-- Live charts
-- Historical data
-- Export metrics
-- Alerts for high usage
-
-### 8. Model Hub
-
-Browse and download models from Hugging Face.
-
-**Features:**
-- Search models
-- View model details
-- Download to local storage
-- Manage local models
-
-## Workflows
-
-### Complete ML Pipeline Example
-
-**Scenario:** Train a chatbot on company documentation
-
-1. **Collect Data:**
-   ```
-   Crawler → Enter company doc URLs → Crawl → Save dataset
-   ```
-
-2. **Prepare Dataset:**
-   ```
-   Dataset Manager → Select dataset → Format as instruction-tuning
-   ```
-
-3. **Train Model:**
-   ```
-   Training Console → Select base model (e.g., Llama-2-7b)
-   → Load dataset → Configure LoRA → Train
-   ```
-
-4. **Compress Model:**
-   ```
-   Compression → Select trained model → INT4 quantization
-   → Compress → Save
-   ```
-
-5. **Deploy:**
-   ```
-   Deployment → Select compressed model → Local deployment
-   → Deploy → Test API
-   ```
-
-6. **Monitor:**
-   ```
-   Resource Monitor → Check GPU/CPU usage during inference
-   ```
-
-## Tips & Best Practices
-
-### Training
-- Start with small epochs (1-3) and validate results
-- Use gradient accumulation if batch size is too small
-- Save checkpoints regularly
-- Monitor validation loss to prevent overfitting
-
-### Crawling
-- Respect robots.txt
-- Use reasonable delays between requests
-- Start with small page limits for testing
-- Verify data quality before using for training
-
-### Compression
-- Test compressed model before deployment
-- Compare quality metrics (perplexity, accuracy)
-- Use INT4 for deployment, keep FP16 for training
-- Document compression settings for reproducibility
-
-### Deployment
-- Test locally before cloud deployment
-- Monitor resource usage in production
-- Set up proper error handling
-- Use batching for multiple requests
-
-### Resource Management
-- Close unused deployments
-- Clear completed jobs regularly
-- Archive old datasets
-- Monitor disk space
-
-## Keyboard Shortcuts
-
-- `Ctrl/Cmd + K` - Command palette (coming soon)
-- `Ctrl/Cmd + ,` - Settings
-- `Ctrl/Cmd + Shift + M` - Monitor view
-- `Esc` - Close dialogs
+* **Hugging Face token:** stored encrypted on this computer and never shown again after saving.
+* **Cloud GPUs:** connect RunPod, Modal, Together or Replicate, and add SSH hosts (see
+  [CLOUD.md](CLOUD.md)). The page says whether secrets are protected by your system keychain.
+* **Application updates.**
 
 ## Troubleshooting
 
-### Training Issues
-
-**Problem:** Out of memory (OOM)
-**Solutions:**
-- Reduce batch size
-- Enable 4-bit quantization
-- Use gradient checkpointing
-- Choose smaller model
-
-**Problem:** Training loss not decreasing
-**Solutions:**
-- Check learning rate (try 2e-4)
-- Verify dataset quality
-- Increase epochs
-- Check for data leakage
-
-### Deployment Issues
-
-**Problem:** API not responding
-**Solutions:**
-- Check if deployment is running
-- Verify port is not blocked
-- Check logs for errors
-- Restart deployment
-
-**Problem:** Slow inference
-**Solutions:**
-- Use quantized model
-- Reduce max_length
-- Enable GPU if available
-- Use batching
-
-### Crawler Issues
-
-**Problem:** Pages not loading
-**Solutions:**
-- Check internet connection
-- Increase timeout
-- Verify URLs are accessible
-- Check for CAPTCHA/blocking
-
-## FAQ
-
-**Q: Can I use CraftML Studio offline?**
-A: Yes! All core features work offline. You only need internet for downloading base models and deploying to cloud.
-
-**Q: What models are supported?**
-A: Any Hugging Face Transformers model (LLaMA, GPT-2, BERT, etc.)
-
-**Q: How much GPU memory do I need?**
-A: Depends on model size:
-- 7B model: 6-8GB (with 4-bit)
-- 13B model: 10-16GB (with 4-bit)
-- CPU only: Possible but slower
-
-**Q: Can I train on multiple GPUs?**
-A: Not yet, but planned for future release.
-
-**Q: Where are my models stored?**
-A: In `resources/models/` by default (configurable in settings)
-
-**Q: How do I update CraftML Studio?**
-A: Download new version and reinstall. Your data is preserved.
-
-## Support & Community
-
-- **Documentation:** Check docs/ folder
-- **Issues:** Report bugs on GitHub
-- **Discussions:** Join community forums
-- **Updates:** Watch repository for new releases
-
+| Problem | What to do |
+|---|---|
+| "Port 17860 is in use by another application" | Another program uses the app's port; close it and press Retry. |
+| "A CraftML backend from version … is still running" | Quit the other CraftML Studio window, then Retry. |
+| Download is very slow or stalls | Check the network; behind a proxy, set `HTTPS_PROXY`. Gated models need a token. |
+| Out of memory while training | Use a smaller model, QLoRA (NVIDIA), a smaller batch size or a shorter sequence length. |
+| "INT4/INT8/GPTQ/AWQ needs an NVIDIA GPU" | Use a GGUF preset on Apple Silicon or CPU. |
+| Where are the logs? | See [SETUP.md](SETUP.md#where-things-are-stored), or run `scripts/check_backend_logs`. |

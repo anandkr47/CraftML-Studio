@@ -3,30 +3,43 @@ Efficient Training Service
 Optimized for fast training with minimal GPU/CPU consumption
 """
 
-import torch
+import math
+import os
 import threading
+
+import torch
 import logging
 from pathlib import Path
 from typing import Dict, Any, Callable, Optional
-from datetime import datetime
 
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     TrainingArguments,
     Trainer,
-    DataCollatorForLanguageModeling,
 )
-from datasets import load_dataset
 from peft import (
     LoraConfig,
     get_peft_model,
     prepare_model_for_kbit_training,
 )
-import bitsandbytes as bnb
 
 logger = logging.getLogger(__name__)
 
+
+
+def _cached_first(load, name_or_path, **kwargs):
+    """
+    ``load(name_or_path, **kwargs)`` from the local Hugging Face cache when the model is already
+    downloaded, so training works offline (and doesn't stall on flaky networks). Kept local to
+    this module because it also runs on remote GPU workers (see core/utils/hub.py).
+    """
+    if os.path.exists(name_or_path):
+        return load(name_or_path, **kwargs)
+    try:
+        return load(name_or_path, local_files_only=True, **kwargs)
+    except (OSError, ValueError):
+        return load(name_or_path, **kwargs)
 
 class EfficientTrainer:
     """
@@ -110,15 +123,25 @@ class EfficientTrainer:
         if training_config is None:
             training_config = {}
         
+        def opt(key: str, default: Any) -> Any:
+            """Explicit None (an omitted optional field) means "use the default"."""
+            value = training_config.get(key)
+            return default if value is None else value
+
         self.training_config = {
-            'num_epochs': training_config.get('num_epochs', default_epochs),
-            'batch_size': training_config.get('batch_size', default_batch),
-            'learning_rate': training_config.get('learning_rate', default_lr),
-            'warmup_steps': training_config.get('warmup_steps', 50),  # Reduced for speed
-            'gradient_accumulation_steps': training_config.get('gradient_accumulation_steps', 2),  # Reduced for speed
-            'max_grad_norm': training_config.get('max_grad_norm', 0.3),
-            'weight_decay': training_config.get('weight_decay', 0.01),
+            'num_epochs': opt('num_epochs', default_epochs),
+            'batch_size': opt('batch_size', default_batch),
+            'learning_rate': opt('learning_rate', default_lr),
+            # None -> warm up over 3% of the run (a fixed step count can exceed a small run entirely)
+            'warmup_steps': training_config.get('warmup_steps'),
+            'gradient_accumulation_steps': opt('gradient_accumulation_steps', 1),
+            'max_grad_norm': opt('max_grad_norm', 0.3),
+            'weight_decay': opt('weight_decay', 0.01),
+            'save_steps': opt('save_steps', 100),
+            'logging_steps': opt('logging_steps', 5),
+            'max_seq_length': opt('max_seq_length', 512),
         }
+        want_8bit = bool(training_config.get('use_8bit'))
         
         # Auto-detect device
         self.device = self._detect_device()
@@ -136,7 +159,10 @@ class EfficientTrainer:
                 self.use_8bit = False
         elif self.training_method == 'lora':
             self.use_4bit = False
-            self.use_8bit = False  # Standard precision LoRA
+            # 8-bit LoRA (bitsandbytes) needs CUDA; otherwise standard precision
+            self.use_8bit = want_8bit and torch.cuda.is_available()
+            if want_8bit and not self.use_8bit:
+                self._log("⚠️  Warning: 8-bit training requires CUDA. Using standard precision LoRA.")
         else:  # full
             self.use_4bit = False
             self.use_8bit = False
@@ -156,7 +182,18 @@ class EfficientTrainer:
         if self.log_callback:
             self.log_callback(self.job_id, message)
     
-    def _update_progress(self, current_epoch: int, total_epochs: int, current_step: int, total_steps: int, loss: float = 0.0):
+    def _memory_gb(self) -> Optional[float]:
+        """Accelerator memory currently allocated by this process, in GB."""
+        try:
+            if self.device == "cuda":
+                return round(torch.cuda.memory_allocated() / 1024 ** 3, 3)
+            if self.device == "mps":
+                return round(torch.mps.current_allocated_memory() / 1024 ** 3, 3)
+        except Exception:
+            pass
+        return None
+
+    def _update_progress(self, current_epoch: int, total_epochs: int, current_step: int, total_steps: int, loss: float = 0.0, metrics: Optional[Dict[str, Any]] = None):
         """Update progress"""
         if self.progress_callback:
             self.progress_callback(
@@ -166,7 +203,7 @@ class EfficientTrainer:
                 current_step=current_step,
                 total_steps=total_steps,
                 loss=loss,
-                metrics=None
+                metrics=metrics
             )
     
     def load_model_and_tokenizer(self):
@@ -178,16 +215,10 @@ class EfficientTrainer:
         self._log(f"Training method: {self.training_method.upper()}")
         self._log(f"Device: {self.device}")
         
-        # Check if model needs to be downloaded
-        try:
-            from huggingface_hub import model_info
-            self._log(f"📥 Checking model availability: {self.model_name}")
-        except:
-            pass
-        
         # Load tokenizer
         self._log("📥 Loading tokenizer...")
-        tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer = _cached_first(
+            AutoTokenizer.from_pretrained,
             self.model_name,
             trust_remote_code=True,
             use_fast=True,
@@ -214,28 +245,45 @@ class EfficientTrainer:
                 bnb_4bit_use_double_quant=True,  # Nested quantization
             )
             
-            model = AutoModelForCausalLM.from_pretrained(
+            model = _cached_first(
+                AutoModelForCausalLM.from_pretrained,
                 self.model_name,
                 quantization_config=bnb_config,
                 device_map="auto",
                 trust_remote_code=True,
-                torch_dtype=torch.float16,
+                dtype=torch.float16,
             )
             
             # Prepare model for k-bit training
             model = prepare_model_for_kbit_training(model)
             self._log("✓ Model loaded with 4-bit quantization (QLoRA)")
             
+        elif self.training_method == 'lora' and self.use_8bit:
+            from transformers import BitsAndBytesConfig
+
+            self._log("📥 Downloading/loading model weights in 8-bit (this may take a few minutes)...")
+            model = _cached_first(
+                AutoModelForCausalLM.from_pretrained,
+                self.model_name,
+                quantization_config=BitsAndBytesConfig(load_in_8bit=True),
+                device_map="auto",
+                trust_remote_code=True,
+                dtype=torch.float16,
+            )
+            model = prepare_model_for_kbit_training(model)
+            self._log("✓ Model loaded with 8-bit quantization")
+
         elif self.training_method in ['lora', 'qlora']:
             # LoRA: Standard precision, more speed
             self._log("📥 Downloading/loading model weights (this may take a few minutes)...")
             self._log("💡 Tip: Large models will be cached locally for future use")
             
-            model = AutoModelForCausalLM.from_pretrained(
+            model = _cached_first(
+                AutoModelForCausalLM.from_pretrained,
                 self.model_name,
                 device_map="auto",
                 trust_remote_code=True,
-                torch_dtype=torch.float16 if self.device == "cuda" else (
+                dtype=torch.float16 if self.device == "cuda" else (
                     torch.bfloat16 if self.device == "mps" else torch.float32
                 ),
             )
@@ -246,11 +294,12 @@ class EfficientTrainer:
             self._log("📥 Downloading/loading model weights (this may take a few minutes)...")
             self._log("💡 Tip: Large models will be cached locally for future use")
             
-            model = AutoModelForCausalLM.from_pretrained(
+            model = _cached_first(
+                AutoModelForCausalLM.from_pretrained,
                 self.model_name,
                 device_map="auto",
                 trust_remote_code=True,
-                torch_dtype=torch.float16 if self.device == "cuda" else (
+                dtype=torch.float16 if self.device == "cuda" else (
                     torch.bfloat16 if self.device == "mps" else torch.float32
                 ),
             )
@@ -264,55 +313,25 @@ class EfficientTrainer:
         return model, tokenizer
     
     def load_dataset_from_file(self, tokenizer):
-        """Load and tokenize dataset"""
+        """Load the dataset (JSONL/JSON/CSV/Parquet/TXT), render it to text and tokenize"""
+        from core.data.finetune_dataset import detect_format, load_raw, to_text_dataset
+
         self._log(f"Loading dataset: {self.dataset_path}")
-        
-        # Detect file format
-        file_path = Path(self.dataset_path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"Dataset not found: {self.dataset_path}")
-        
-        # Load dataset based on format
-        if file_path.suffix == '.jsonl':
-            dataset = load_dataset('json', data_files=str(file_path), split='train')
-        elif file_path.suffix == '.json':
-            dataset = load_dataset('json', data_files=str(file_path), split='train')
-        elif file_path.suffix == '.csv':
-            dataset = load_dataset('csv', data_files=str(file_path), split='train')
-        else:
-            raise ValueError(f"Unsupported file format: {file_path.suffix}")
-        
-        self._log(f"✓ Dataset loaded: {len(dataset)} samples")
-        
-        # Tokenize dataset
+        raw = load_raw(self.dataset_path)
+        self._log(f"✓ Dataset loaded: {len(raw)} samples (format: {detect_format(raw.column_names)})")
+
+        texts = to_text_dataset(raw, tokenizer)
+        eos = tokenizer.eos_token or ""
+        max_length = self.training_config['max_seq_length']
+
         def tokenize_function(examples):
-            # Combine instruction and output for training
-            if 'instruction' in examples and 'output' in examples:
-                texts = [
-                    f"### Instruction:\n{inst}\n\n### Response:\n{out}"
-                    for inst, out in zip(examples['instruction'], examples['output'])
-                ]
-            elif 'text' in examples:
-                texts = examples['text']
-            else:
-                raise ValueError("Dataset must have 'instruction'+'output' or 'text' fields")
-            
-            return tokenizer(
-                texts,
-                truncation=True,
-                max_length=512,  # Shorter for efficiency
-                padding=False,
-            )
-        
-        tokenized_dataset = dataset.map(
-            tokenize_function,
-            batched=True,
-            remove_columns=dataset.column_names,
-        )
-        
-        self._log(f"✓ Dataset tokenized")
-        return tokenized_dataset
-    
+            batch = [t if (not eos or t.endswith(eos)) else t + eos for t in examples['text']]
+            return tokenizer(batch, truncation=True, max_length=max_length, padding=False)
+
+        tokenized = texts.map(tokenize_function, batched=True, remove_columns=['text'])
+        self._log("✓ Dataset tokenized")
+        return tokenized
+
     def setup_lora(self, model):
         """Setup LoRA configuration or full fine-tuning"""
         if self.training_method == 'full':
@@ -349,6 +368,8 @@ class EfficientTrainer:
                     else:
                         target_modules = ["q_proj", "v_proj"]  # Generic fallback
             
+            # GPT-2 style models use Conv1D layers, whose weights are stored transposed.
+            model_type = getattr(model.config, 'model_type', '') or ''
             lora_config = LoraConfig(
                 r=self.lora_config['r'],
                 lora_alpha=self.lora_config['lora_alpha'],
@@ -356,6 +377,7 @@ class EfficientTrainer:
                 target_modules=target_modules,
                 bias="none",
                 task_type="CAUSAL_LM",
+                fan_in_fan_out=model_type in ("gpt2", "gpt_bigcode"),
             )
             
             model = get_peft_model(model, lora_config)
@@ -413,13 +435,24 @@ class EfficientTrainer:
                 }
             
             # Training arguments (optimized for efficiency and speed)
+            # Warmup as a step count computed here: works on every transformers version
+            # (transformers 5 removed `warmup_ratio`) and never exceeds a small run.
+            steps_per_epoch = max(1, math.ceil(
+                len(train_dataset) / (self.training_config['batch_size'] * self.training_config['gradient_accumulation_steps'])
+            ))
+            total_steps = steps_per_epoch * self.training_config['num_epochs']
+            warmup_steps = self.training_config['warmup_steps']
+            if warmup_steps is None:
+                warmup_steps = int(total_steps * 0.03)
+            warmup_steps = min(int(warmup_steps), max(0, total_steps - 1))
+
             training_args = TrainingArguments(
                 output_dir=str(self.output_dir),
                 num_train_epochs=self.training_config['num_epochs'],
                 per_device_train_batch_size=self.training_config['batch_size'],
                 gradient_accumulation_steps=self.training_config['gradient_accumulation_steps'],
                 learning_rate=self.training_config['learning_rate'],
-                warmup_steps=self.training_config['warmup_steps'],
+                warmup_steps=warmup_steps,
                 max_grad_norm=self.training_config['max_grad_norm'],
                 weight_decay=self.training_config['weight_decay'],
                 
@@ -430,13 +463,14 @@ class EfficientTrainer:
                 gradient_checkpointing=self.training_method != 'full',  # Skip for full to speed up
                 
                 # Aggressive logging for faster feedback
-                logging_steps=5,  # More frequent updates
+                logging_steps=self.training_config['logging_steps'],
                 logging_first_step=True,  # Log immediately
-                save_steps=500,  # Less frequent saves for speed
-                save_total_limit=1,  # Keep only latest checkpoint to save disk
+                save_steps=self.training_config['save_steps'],  # automatic checkpoints
+                save_total_limit=2,  # keep the two latest checkpoints
                 
                 # Speed optimizations
                 remove_unused_columns=True,
+                dataloader_pin_memory=self.device == "cuda",  # pinned memory only helps (and works) on CUDA
                 report_to="none",  # Disable wandb/tensorboard for speed
                 dataloader_num_workers=0,  # Reduce CPU usage
                 disable_tqdm=False,  # Keep progress bar
@@ -445,10 +479,14 @@ class EfficientTrainer:
             )
             
             # Data collator
-            data_collator = DataCollatorForLanguageModeling(
-                tokenizer=tokenizer,
-                mlm=False,
-            )
+            def data_collator(features):
+                # Mask padding via the attention mask (not the pad id: pad == eos here,
+                # and the model must still learn to emit EOS).
+                batch = tokenizer.pad(features, return_tensors="pt")
+                labels = batch["input_ids"].clone()
+                labels[batch["attention_mask"] == 0] = -100
+                batch["labels"] = labels
+                return batch
             
             # Custom callback for progress updates and cancellation
             from transformers import TrainerCallback
@@ -477,7 +515,12 @@ class EfficientTrainer:
                             total_epochs=total_epochs,
                             current_step=state.global_step,
                             total_steps=state.max_steps,
-                            loss=logs['loss']
+                            loss=logs['loss'],
+                            metrics={
+                                "epoch": round(state.epoch or 0, 3),
+                                "learning_rate": logs.get('learning_rate'),
+                                "vram_gb": self.trainer_instance._memory_gb(),
+                            },
                         )
                         self.trainer_instance._log(
                             f"Epoch {current_epoch}/{total_epochs} - Step {state.global_step}/{state.max_steps} - Loss: {logs['loss']:.4f}"
@@ -533,6 +576,11 @@ class EfficientTrainer:
             }
             
         except Exception as e:
+            if "out of memory" in str(e).lower():
+                self._log(
+                    "💡 Out of memory: try QLoRA (4-bit), a smaller batch size or max sequence length, "
+                    "or a smaller base model."
+                )
             self._log(f"❌ Training failed: {str(e)}")
             logger.error(f"Training error for job {self.job_id}: {e}", exc_info=True)
             

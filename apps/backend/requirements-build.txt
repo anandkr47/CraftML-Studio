@@ -1,0 +1,2 @@
+# Packaging the backend sidecar (scripts/build_desktop.*); not needed to run from source
+pyinstaller>=6.10,<7

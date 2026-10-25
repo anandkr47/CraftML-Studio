@@ -1,0 +1,12 @@
+# Installed on the remote GPU host. Torch comes from the base image (or bootstrap.sh installs it).
+# Pinned to the exact versions the app's own trainer is tested with (apps/backend/requirements.lock.txt);
+# keep them in sync when upgrading.
+transformers==5.20.2
+peft==0.21.2
+accelerate==1.15.0
+bitsandbytes==0.50.2
+datasets==5.1.0
+huggingface-hub==2.3.0
+sentencepiece==0.2.2
+safetensors==0.8.0
+nvidia-ml-py==13.615.71

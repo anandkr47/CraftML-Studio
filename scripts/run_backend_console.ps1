@@ -4,8 +4,8 @@
 Write-Host "Starting CraftML Studio Backend with console output..." -ForegroundColor Cyan
 Write-Host "Press Ctrl+C to stop the server`n" -ForegroundColor Yellow
 
-# Navigate to dist directory (Nuitka --standalone creates dist/main.dist/main.exe)
-$distPath = Join-Path $PSScriptRoot "..\dist\main.dist\main.exe"
+# PyInstaller one-folder build from scripts\build_desktop.ps1
+$distPath = Join-Path $PSScriptRoot "..\dist\craftml-backend\craftml-backend.exe"
 if (-not (Test-Path $distPath)) {
     Write-Error "Backend EXE not found at: $distPath"
     Write-Host "Please run .\scripts\build_desktop.ps1 first to build the backend." -ForegroundColor Yellow
@@ -13,7 +13,7 @@ if (-not (Test-Path $distPath)) {
 }
 
 # Stop any existing backend processes
-$existing = Get-Process -Name "main" -ErrorAction SilentlyContinue
+$existing = Get-Process -Name "craftml-backend" -ErrorAction SilentlyContinue
 if ($existing) {
     Write-Host "Stopping existing backend processes..." -ForegroundColor Yellow
     $existing | Stop-Process -Force
@@ -23,5 +23,5 @@ if ($existing) {
 # Run the backend with console output
 # This will show all output directly in the terminal
 Set-Location (Split-Path $distPath)
-& $distPath --console --host 127.0.0.1 --port 5000 --log-level debug
+& $distPath --console --host 127.0.0.1 --port 17860 --log-level debug
 

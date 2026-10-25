@@ -35,6 +35,17 @@ interface NotificationStore {
   info: (title: string, message?: string, duration?: number) => string;
 }
 
+function toText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.message;
+  if (value === null || value === undefined) return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 export const useNotificationStore = create<NotificationStore>((set, get) => ({
   notifications: [],
 
@@ -42,6 +53,9 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     const id = `notification-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newNotification: Notification = {
       ...notification,
+      // Coerce to text: a stray object here would crash rendering of the whole app.
+      title: toText(notification.title) || 'Notification',
+      message: notification.message === undefined ? undefined : toText(notification.message),
       id,
       timestamp: Date.now(),
       duration: notification.duration ?? 5000, // Default 5 seconds

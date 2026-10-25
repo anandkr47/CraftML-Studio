@@ -10,6 +10,7 @@ import { Card, CardContent } from './ui/Card';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
 import { HStack } from './ui/Stack';
+import { API_BASE } from '../config';
 
 interface HFTokenStatus {
   is_authenticated: boolean;
@@ -37,7 +38,7 @@ export const HFConnectionPrompt: React.FC<HFConnectionPromptProps> = ({
   const checkTokenStatus = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/settings/hf-token/status');
+      const response = await fetch(`${API_BASE}/api/settings/hf-token/status`);
       if (response.ok) {
         const data = await response.json();
         setTokenStatus(data);
@@ -140,9 +141,6 @@ export const HFConnectionPrompt: React.FC<HFConnectionPromptProps> = ({
                 </Button>
               </a>
             </HStack>
-            <p className="text-xs text-warning-600 dark:text-warning-400 mt-2">
-              💡 Tip: You can also train from scratch without a base model if you have your own dataset.
-            </p>
           </div>
         </div>
       </CardContent>

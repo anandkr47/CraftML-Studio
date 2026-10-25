@@ -1,72 +1,50 @@
-# CraftML Studio Backend Dependencies
+# CraftML Studio backend dependencies.
+#
+# Ranges cover the versions the code is tested against (lower bound) up to the next major release
+# (upper bound), so a new major version can never be pulled in silently.  For reproducible installs
+# use the exact tested set as constraints:
+#     pip install -r requirements.txt -c requirements.lock.txt
+# Development tools live in requirements-dev.txt; optional GGUF (llama.cpp) support in requirements-gguf.txt.
 
-# Core web framework
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-python-multipart>=0.0.6
+# Web framework
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+python-multipart>=0.0.9,<1          # file uploads
 
 # Database
-sqlalchemy>=2.0.0
-alembic>=1.12.0
+sqlalchemy>=2.0,<3
 
-# Task queue and broker  
-celery>=5.3.0
-redis>=5.0.0
+# ML, PEFT fine-tuning and inference
+# (GPTQ/AWQ are optional and NVIDIA-only: pip install auto-gptq autoawq)
+torch>=2.4,<3
+transformers>=5.0,<6
+peft>=0.17,<1
+accelerate>=1.0,<2
+bitsandbytes>=0.45,<1
+datasets>=4.0,<6
+huggingface-hub>=0.26,<3
+safetensors>=0.4,<1
+sentencepiece>=0.2,<1               # tokenizers for Llama/Mistral-family models
+sentence-transformers>=6.0,<7       # local embeddings
+gguf>=0.10,<1                       # used by llama.cpp's converter
 
-# Web crawling and scraping
-scrapy>=2.11.0
-playwright>=1.40.0
-beautifulsoup4>=4.12.0
-aiohttp>=3.9.0
-lxml>=4.9.0
+# Local RAG
+sqlite-vec>=0.1.6,<0.2
+pypdf>=4,<7
+python-docx>=1.1,<2
+numpy>=1.26,<3
 
-# ML, NLP, and model training
-torch>=2.1.0
-transformers>=4.35.0
-sentence-transformers>=2.2.2
-bitsandbytes>=0.41.0
-optimum>=1.14.0
-faiss-cpu>=1.7.4
-peft>=0.6.0
-accelerate>=0.24.0
-onnx>=1.15.0
-onnxruntime>=1.17.0
-safetensors>=0.4.2
+# System monitoring
+psutil>=5.9,<8
+nvidia-ml-py>=12.535                # NVML bindings track driver releases; no upper bound
 
-# Utility and monitoring
-psutil>=5.9.0
-gputil>=1.4.0
-requests>=2.32.0
-aiofiles>=23.2.1
-orjson>=3.10.7
+# Security / settings
+cryptography>=42,<51
+pydantic>=2.7,<3
 
-# Data science and LLM
-langchain>=0.0.335
-langdetect>=1.0.9
-
-# Logging
-loguru>=0.7.2
-
-# Docker SDK (for deployment)
-docker>=6.1.0
-
-# HuggingFace Hub
-huggingface-hub>=0.19.0
-datasets>=2.21.0
-
-# API utilities
-pydantic>=2.5.0
-pydantic-settings>=2.1.0
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-cryptography>=41.0.0
-
-# Monitoring and metrics
-prometheus-client>=0.19.0
-
-# Development dependencies (optional)
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
-black>=23.11.0
-flake8>=6.1.0
-mypy>=1.7.0
+# Remote cloud GPUs (providers import their SDKs lazily)
+keyring>=25,<26
+httpx>=0.27,<1
+paramiko>=3.4,<6
+runpod>=1.7,<2
+modal>=1.0,<2

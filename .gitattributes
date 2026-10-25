@@ -1,0 +1,4 @@
+# Shell scripts and the remote worker are executed on Linux hosts: never convert their line endings.
+*.sh text eol=lf
+core/cloud/worker/** text eol=lf
+core/cloud/events.py text eol=lf

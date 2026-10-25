@@ -9,8 +9,15 @@ echo "🚀 Starting CraftML Studio in development mode..."
 if [ "$1" == "--backend-only" ]; then
     echo "🐍 Starting backend only..."
     cd "$(dirname "$0")/../apps/backend"
-    python main.py
-    exit 0
+    PY="${CRAFTML_PYTHON:-}"
+    if [ -z "$PY" ]; then
+        for c in venv/bin/python .venv/bin/python; do [ -x "$c" ] && PY="$c" && break; done
+    fi
+    if [ -z "$PY" ]; then
+        echo "❌ No virtualenv found in apps/backend. Run ./scripts/setup.sh first (or set CRAFTML_PYTHON)."
+        exit 1
+    fi
+    exec "$PY" run_server.py "${@:2}"
 fi
 
 # Check if frontend should be started separately

@@ -6,29 +6,24 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
-  Home,
-  Database,
-  Globe,
+  BookOpen,
   PlayCircle,
   Minimize2,
   Send,
   ChevronLeft,
   ChevronRight,
-  Cpu as CpuIcon,
   Zap,
   MessageSquare,
+  Cpu as CpuIcon,
   Settings as SettingsIcon,
 } from "lucide-react";
 
 const navItems = [
-  { name: "Dashboard", path: "/", icon: Home },
-  { name: "Hardware", path: "/hardware", icon: CpuIcon },
-  { name: "Datasets", path: "/datasets", icon: Database },
-  { name: "Crawler", path: "/crawler", icon: Globe },
-  { name: "Training", path: "/train", icon: PlayCircle },
-  { name: "Playground", path: "/playground", icon: MessageSquare },
-  { name: "Compression", path: "/compress", icon: Minimize2 },
-  { name: "Deployment", path: "/deploy", icon: Send },
+  { name: "Chat", path: "/", icon: MessageSquare },
+  { name: "Fine-Tune", path: "/finetune", icon: PlayCircle },
+  { name: "Compress", path: "/compress", icon: Minimize2 },
+  { name: "Knowledge Base", path: "/kb", icon: BookOpen },
+  { name: "Deploy & Endpoints", path: "/deploy", icon: Send },
   { name: "Settings", path: "/settings", icon: SettingsIcon },
 ];
 
@@ -73,6 +68,7 @@ const Sidebar = () => {
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.path === "/"}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 group ${
                   isActive
@@ -120,7 +116,7 @@ const Sidebar = () => {
             <p className="text-xs font-medium text-neutral-900 dark:text-neutral-100 whitespace-nowrap">
               Local Mode
             </p>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-nowrap">v1.0.0</p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-nowrap">v{__APP_VERSION__}</p>
           </div>
         </div>
       </div>

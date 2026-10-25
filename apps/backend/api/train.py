@@ -4,6 +4,8 @@ Handles model fine-tuning endpoints with Pydantic validation
 """
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from core.cloud.errors import CloudError
+from services import jobs as job_store
 from services.training_service import (
     start_training,
     stop_training,
@@ -19,7 +21,6 @@ from models.responses import (
     TrainingStatusResponse,
     TrainingJobsResponse,
     TrainingJobCountsResponse,
-    ErrorResponse
 )
 
 router = APIRouter()
@@ -39,7 +40,7 @@ async def start_train(request: TrainingStartRequest, background_tasks: Backgroun
     """
     try:
         # Convert Pydantic model to dict
-        params = request.dict()
+        params = request.model_dump()
         
         # Start training
         job_id = start_training(params)
@@ -51,6 +52,8 @@ async def start_train(request: TrainingStartRequest, background_tasks: Backgroun
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except CloudError:
+        raise  # handled globally with the right status and a user-facing message
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start training: {str(e)}")
 
@@ -190,3 +193,11 @@ async def training_job_counts():
         return TrainingJobCountsResponse(**counts)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/metrics/{job_id}")
+async def train_metrics(job_id: str, after_step: int = -1):
+    """Logged training steps (loss, learning rate, VRAM) with step > after_step."""
+    if not job_store.get(job_id):
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    return {"job_id": job_id, "points": job_store.get_metrics(job_id, after_step)}

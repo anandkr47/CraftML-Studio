@@ -1,6 +1,6 @@
 [package]
 name = "craftml-studio"
-version = "0.1.0"
+version = "0.3.3"
 description = "CraftML Studio - Desktop Application"
 authors = ["you"]
 edition = "2021"
@@ -27,5 +27,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-updater = "2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.11", features = ["blocking"] }
+ctrlc = { version = "3", features = ["termination"] }
+tar = "0.4"
+flate2 = "1"
 

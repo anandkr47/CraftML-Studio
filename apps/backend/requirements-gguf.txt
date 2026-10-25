@@ -1,0 +1,6 @@
+# Optional: GGUF models in Chat/Deploy and GGUF quantization in Compress (llama.cpp bindings).
+# Installed separately because it builds from source where no prebuilt wheel exists, which needs a
+# C/C++ toolchain (Xcode Command Line Tools / Visual Studio Build Tools / build-essential).
+# The app works without it; GGUF features then explain what to install.
+# Prebuilt wheels: https://abetlen.github.io/llama-cpp-python/whl/<cpu|metal|cu121|...>
+llama-cpp-python>=0.3,<1

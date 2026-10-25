@@ -1,112 +1,60 @@
 """
-Compression API Routes
-Handles model compression endpoints with Pydantic validation
+Compression API
+Quantize local models (GGUF, INT8/INT4, GPTQ, AWQ) with device presets and a before/after report.
 """
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
-from services.compression_service import (
-    start_compression,
-    get_status,
-    compare_models,
-    list_jobs
-)
-from models.requests import CompressionStartRequest, ModelCompareRequest
-from models.responses import (
-    JobResponse,
-    CompressionStatusResponse,
-    ModelComparisonResponse
-)
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException
+
+from core.ml.compression.gguf import GgufError, setup_llama_cpp, tooling_status
+from models.requests import CompressionStartRequest
+from models.responses import CompressionStatusResponse, JobResponse
+from services import compression_service as svc
+from services.inference import InferenceError
 
 router = APIRouter()
 
 
+@router.get("/presets")
+def get_presets(model_id: Optional[str] = None):
+    """Target-device presets (with size estimates for ``model_id``) and the hardware-recommended one."""
+    return svc.list_presets(model_id)
+
+
 @router.post("/start", response_model=JobResponse)
-async def start_compress(request: CompressionStartRequest, background_tasks: BackgroundTasks):
-    """
-    Start a new compression job
-    
-    Args:
-        request: Compression configuration
-        background_tasks: FastAPI background tasks
-        
-    Returns:
-        Job ID and status
-    """
+def start_compress(request: CompressionStartRequest):
     try:
-        # Convert Pydantic model to dict
-        params = request.dict()
-        
-        # Start compression
-        job_id = start_compression(params)
-        
-        return JobResponse(
-            job_id=job_id,
-            status="pending",
-            message="Compression job started successfully"
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start compression: {str(e)}")
+        job_id = svc.start_compression(request.model_dump())
+    except (ValueError, InferenceError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return JobResponse(job_id=job_id, status="pending", message="Compression job started")
 
 
 @router.get("/status/{job_id}", response_model=CompressionStatusResponse)
-async def compress_status(job_id: str):
-    """
-    Get compression job status
-    
-    Args:
-        job_id: Job identifier
-        
-    Returns:
-        Job status and results
-    """
-    try:
-        status = get_status(job_id)
-        
-        if status.get("status") == "not_found":
-            raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-        
-        return CompressionStatusResponse(**status)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/compare", response_model=ModelComparisonResponse)
-async def compare_models_api(request: ModelCompareRequest):
-    """
-    Compare two models (original vs compressed)
-    
-    Args:
-        request: Model paths to compare
-        
-    Returns:
-        Comparison results
-    """
-    try:
-        result = compare_models(request.model_a_path, request.model_b_path)
-        
-        if "error" in result:
-            raise HTTPException(status_code=500, detail=result["error"])
-        
-        return ModelComparisonResponse(**result)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+def compress_status(job_id: str):
+    status = svc.get_status(job_id)
+    if status.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    return CompressionStatusResponse(**status)
 
 
 @router.get("/jobs")
-async def list_compression_jobs():
-    """
-    List all compression jobs
-    
-    Returns:
-        List of compression jobs
-    """
+def list_compression_jobs():
+    return svc.list_jobs()
+
+
+@router.get("/tooling")
+def llama_cpp_tooling():
+    """Whether the llama.cpp tooling needed for GGUF is available."""
+    return tooling_status()
+
+
+@router.post("/setup-llama-cpp")
+def install_llama_cpp():
+    """Download llama.cpp (shallow git clone) into the app's tools directory."""
     try:
-        return list_jobs()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        setup_llama_cpp()
+    except GgufError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return tooling_status()
