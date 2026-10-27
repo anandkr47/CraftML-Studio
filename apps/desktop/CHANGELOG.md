@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/anandkr47/CraftML-Studio/compare/craftml-studio-v0.3.4...craftml-studio-v0.4.0) (2026-10-27)
+
+
+### Features
+
+* Merge pull request [#12](https://github.com/anandkr47/CraftML-Studio/issues/12) from anandkr47/feature/improve_over_engineering ([fe87a0e](https://github.com/anandkr47/CraftML-Studio/commit/fe87a0ef241c30848cb5293bed5ec998f9795b51))
+
+
+### Bug Fixes
+
+* improve the build logo ([fe87a0e](https://github.com/anandkr47/CraftML-Studio/commit/fe87a0ef241c30848cb5293bed5ec998f9795b51))
+* improve the build logo ([0203941](https://github.com/anandkr47/CraftML-Studio/commit/0203941ad1a03bc49b81ebde2c776d158dad206a))
+
 ## [0.3.4](https://github.com/anandkr47/CraftML-Studio/compare/craftml-studio-v0.3.3...craftml-studio-v0.3.4) (2026-10-25)
 
 
