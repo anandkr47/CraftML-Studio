@@ -1,4 +1,5 @@
 mod backend_process;
+mod dock_icon;
 
 use std::sync::Arc;
 
@@ -30,6 +31,8 @@ pub fn run() {
                 runtime_dir: local_data.join("backend"),
                 log_dir,
             };
+
+            dock_icon::apply();
 
             let backend = app.state::<Arc<BackendProcess>>().inner().clone();
             backend.configure(config);
