@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
+import logoUrl from "../assets/craftml-logo.png";
 import {
   BookOpen,
   PlayCircle,
@@ -12,7 +13,6 @@ import {
   Send,
   ChevronLeft,
   ChevronRight,
-  Zap,
   MessageSquare,
   Cpu as CpuIcon,
   Settings as SettingsIcon,
@@ -43,9 +43,7 @@ const Sidebar = () => {
             collapsed ? "opacity-0 w-0" : "opacity-100 w-auto"
           }`}
         >
-          <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-brand-500 to-brand-600 rounded-lg">
-            <Zap className="w-5 h-5 text-white" />
-          </div>
+          <img src={logoUrl} alt="" className="w-8 h-8 rounded-lg shrink-0" draggable={false} />
           <span className="text-lg font-bold text-neutral-900 dark:text-neutral-100 whitespace-nowrap">
             CraftML
           </span>

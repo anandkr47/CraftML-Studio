@@ -31,3 +31,10 @@ ctrlc = { version = "3", features = ["termination"] }
 tar = "0.4"
 flate2 = "1"
 
+
+# macOS: set the Dock icon at startup. A development build is a bare executable, not an .app bundle, so
+# macOS would otherwise show a generic icon for it.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSApplication", "NSImage", "NSResponder"] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSData", "NSThread"] }
